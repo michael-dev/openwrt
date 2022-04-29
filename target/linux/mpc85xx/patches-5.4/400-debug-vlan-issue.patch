@@ -1,0 +1,20 @@
+--- a/net/netfilter/nfnetlink_log.c
++++ b/net/netfilter/nfnetlink_log.c
+@@ -406,9 +406,17 @@ static u32 nfulnl_get_bridge_size(const
+ 
+ static int nfulnl_put_bridge(struct nfulnl_instance *inst, const struct sk_buff *skb)
+ {
++	WARN_ON_ONCE(!skb_mac_header_was_set(skb));
++
+ 	if (!skb_mac_header_was_set(skb))
+ 		return 0;
+ 
++	if (!skb_vlan_tag_present(skb) &&
++	    ntohs(skb->protocol) != 0x88F5) {
++		WARN_ON_ONCE(1);
++		printk_once("skb->protocol = 0x%.4X\n", ntohs(skb->protocol));
++	}
++
+ 	if (skb_vlan_tag_present(skb)) {
+ 		struct nlattr *nest;
+ 

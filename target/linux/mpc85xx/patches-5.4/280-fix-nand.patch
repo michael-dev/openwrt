@@ -1,0 +1,204 @@
+This adds NAND support.
+
+Changes to board_lbc interrupts und interrupt-parent are likely not needed; compatible is required there.
+Ranges might have some invalid entry here (there is no L2-Switch there and CPLD is actually on port 0x3),
+but we just don't care for now.
+
+The main point here is to reconfigure eLBC (localbus) controller so that is knows about NAND on its bank aka port 2.
+
+--- a/arch/powerpc/boot/dts/p1020wlan.dts
++++ b/arch/powerpc/boot/dts/p1020wlan.dts
+@@ -20,10 +20,15 @@
+ 
+ 	board_lbc: lbc: localbus@ffe05000 {
+ 		reg = <0 0xffe05000 0 0x1000>;
++		compatible = "fsl,p1020-elbc", "fsl,elbc", "simple-bus";
++		interrupts = <19 2>;
++		interrupt-parent = <&mpic>;
+ 
+-		/* NOR flash and cpld */
++		/* NOR flash, NAND flash and cpld */
+ 		ranges = <0x0 0x0 0x0 0xec000000 0x04000000
+-			  0x3 0x0 0x0 0xffa00000 0x01000000>;
++			  0x1 0x0 0x0 0xff800000 0x00040000
++			  0x2 0x0 0x0 0xffa00000 0x00020000
++			  0x3 0x0 0x0 0xffb00000 0x00020000>;
+ 	};
+ 
+ 	board_soc: soc: soc@ffe00000 {
+--- a/arch/powerpc/boot/dts/p1020wlan.dtsi
++++ b/arch/powerpc/boot/dts/p1020wlan.dtsi
+@@ -78,11 +78,32 @@
+ 
+ 	};
+ 
+-	L2switch@2,0 {
++	nand@1,0 {
++		#address-cells = <0x1>;
++		#size-cells = <0x1>;
++		compatible = "fsl,p1020-fcm-nand", "fsl,elbc-fcm-nand";
++		reg = <0x1 0x0 0x00040000>;
++
++		partition@0 {
++			reg = <0x0 0x10000000>;
++			label = "nand-rootfs";
++		};
++
++	};
++
++	cpld@2,0 {
+ 		#address-cells = <1>;
+ 		#size-cells = <1>;
+-		compatible = "vitesse-7385";
++		compatible = "cpld";
+ 		reg = <0x2 0x0 0x20000>;
++		read-only;
++	};
++
++	L2switch@3,0 {
++		#address-cells = <1>;
++		#size-cells = <1>;
++		compatible = "vitesse-7385";
++		reg = <0x3 0x0 0x20000>;
+ 	};
+ };
+ 
+@@ -94,50 +115,6 @@
+ 		};
+ 	};
+ 
+-	spi@7000 {
+-		flash@0 {
+-			#address-cells = <1>;
+-			#size-cells = <1>;
+-			compatible = "spansion,s25sl12801";
+-			reg = <0>;
+-			spi-max-frequency = <40000000>; /* input clock */
+-
+-			partition@u-boot {
+-				/* 512KB for u-boot Bootloader Image */
+-				reg = <0x0 0x00080000>;
+-				label = "u-boot";
+-				read-only;
+-			};
+-
+-			partition@dtb {
+-				/* 512KB for DTB Image */
+-				reg = <0x00080000 0x00080000>;
+-				label = "dtb";
+-				read-only;
+-			};
+-
+-			partition@kernel {
+-				/* 4MB for Linux Kernel Image */
+-				reg = <0x00100000 0x00400000>;
+-				label = "kernel";
+-				read-only;
+-			};
+-
+-			partition@fs {
+-				/* 4MB for Compressed RFS Image */
+-				reg = <0x00500000 0x00400000>;
+-				label = "file system";
+-				read-only;
+-			};
+-
+-			partition@jffs-fs {
+-				/* 7MB for JFFS2 based RFS */
+-				reg = <0x00900000 0x00700000>;
+-				label = "file system jffs2";
+-			};
+-		};
+-	};
+-
+ 	usb@22000 {
+ 		phy_type = "ulpi";
+ 		dr_mode = "host";
+--- a/arch/powerpc/platforms/85xx/mpc85xx_rdb.c
++++ b/arch/powerpc/platforms/85xx/mpc85xx_rdb.c
+@@ -14,6 +14,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/of_platform.h>
+ #include <linux/fsl/guts.h>
++#include <asm/fsl_lbc.h>
+ 
+ #include <asm/time.h>
+ #include <asm/machdep.h>
+@@ -76,11 +77,65 @@ void __init mpc85xx_rdb_pic_init(void)
+ 
+ }
+ 
++static void __init mpc85xx_p1020wlan_setup_arch(void)
++{
++	/* configure NAND on localbus (elbc) CS=1 */
++
++	struct device_node *lbc_node = NULL;
++	struct fsl_lbc_regs __iomem *lbc = NULL;
++	u32 br1, or1;
++
++	lbc_node = of_find_compatible_node(NULL, NULL, "fsl,p1020-elbc");
++	if (!lbc_node) {
++		pr_err("p1020wlan: missing localbus node\n");
++		goto exit;
++	}
++
++	lbc = of_iomap(lbc_node, 0);
++	if (!lbc) {
++		pr_err("p1020wlan: could not map localbus node\n");
++		goto exit;
++	}
++
++	br1 = in_be32(&lbc->bank[1].br);
++	or1 = in_be32(&lbc->bank[1].or);
++
++	if (br1 & BR_V) /* already configured */
++	{
++		pr_err("p1020wlan: lbc bank 1 already configured\n");
++		goto exit;
++	}
++
++	/* values taken from U-Boot */
++	br1 = (0xff800000 /* new address */ & BR_BA) | BR_V | BR_MS_FCM | BR_PS_8 | BR_DECC_CHK_GEN;
++	or1 = (OR_FCM_AM /* OR_AM_32KB */ \
++	        | OR_FCM_PGS    /* Large Page , needed? */ \
++	        | OR_FCM_CSCT \
++	        | OR_FCM_CST \
++	        | OR_FCM_CHT \
++	        | OR_FCM_SCY_1 \
++	        | OR_FCM_TRLX \
++	        | OR_FCM_EHTR);
++
++	out_be32(&lbc->bank[1].br, br1);
++	out_be32(&lbc->bank[1].or, or1);
++
++	pr_err("p1020wlan: lbc bank 1 got configured\n");
++
++exit:
++	if (lbc)
++		iounmap(lbc);
++
++	of_node_put(lbc_node);
++}
++
+ /*
+  * Setup the architecture
+  */
+ static void __init mpc85xx_rdb_setup_arch(void)
+ {
++	const char *model;
++
+ 	if (ppc_md.progress)
+ 		ppc_md.progress("mpc85xx_rdb_setup_arch()", 0);
+ 
+@@ -124,6 +179,11 @@ static void __init mpc85xx_rdb_setup_arc
+ #endif
+ #endif	/* CONFIG_QUICC_ENGINE */
+ 
++	/* P1020WLAN P1020EWLAN special config (not initialised by u-boot) */
++	model = of_flat_dt_get_machine_name();
++	if (of_compat_cmp(model, "fsl,P1020WLAN", strlen("fsl,P1020WLAN")) == 0)
++		mpc85xx_p1020wlan_setup_arch();
++
+ 	printk(KERN_INFO "MPC85xx RDB board from Freescale Semiconductor\n");
+ }
+ 

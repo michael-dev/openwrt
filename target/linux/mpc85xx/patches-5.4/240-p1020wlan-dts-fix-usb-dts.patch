@@ -1,0 +1,104 @@
+From: Michael Braun <michael-dev@fami-braun.de>
+Date: Fri, 30 Mar 2012 23:58:46 +0200
+Subject: [PATCH] P1020WLAN REV D
+
+--- a/arch/powerpc/boot/dts/p1020wlan.dtsi
++++ b/arch/powerpc/boot/dts/p1020wlan.dtsi
+@@ -37,7 +37,7 @@
+ 		#address-cells = <1>;
+ 		#size-cells = <1>;
+ 		compatible = "cfi-flash";
+-		reg = <0x0 0x0 0x4000000>;
++		reg = <0x0 0x0 0x2000000>;
+ 		bank-width = <2>;
+ 		device-width = <1>;
+ 
+@@ -62,60 +62,6 @@
+ 				read-only;
+ 			};
+ 
+-			partition@2000000 {
+-				/* This location must not be altered  */
+-				reg = <0x02000000 0x00200000>;
+-				label = "free_space";
+-			};
+-	};
+-
+-	nand@1,0 {
+-		#address-cells = <1>;
+-		#size-cells = <1>;
+-		compatible = "fsl,p1020-fcm-nand",
+-			     "fsl,elbc-fcm-nand";
+-		reg = <0x1 0x0 0x40000>;
+-
+-		partition@0 {
+-			/* This location must not be altered  */
+-			/* 1MB for u-boot Bootloader Image */
+-			reg = <0x0 0x00100000>;
+-			label = "NAND (RO) U-Boot Image";
+-			read-only;
+-		};
+-
+-		partition@100000 {
+-			/* 1MB for DTB Image */
+-			reg = <0x00100000 0x00100000>;
+-			label = "NAND (RO) DTB Image";
+-			read-only;
+-		};
+-
+-		partition@200000 {
+-			/* 4MB for Linux Kernel Image */
+-			reg = <0x00200000 0x00400000>;
+-			label = "NAND (RO) Linux Kernel Image";
+-			read-only;
+-		};
+-
+-		partition@600000 {
+-			/* 4MB for Compressed Root file System Image */
+-			reg = <0x00600000 0x00400000>;
+-			label = "NAND (RO) Compressed RFS Image";
+-			read-only;
+-		};
+-
+-		partition@a00000 {
+-			/* 7MB for JFFS2 based Root file System */
+-			reg = <0x00a00000 0x00700000>;
+-			label = "NAND (RW) JFFS2 Root File System";
+-		};
+-
+-		partition@1100000 {
+-			/* 15MB for JFFS2 based Root file System */
+-			reg = <0x01100000 0x00f00000>;
+-			label = "NAND (RW) Writable User area";
+-		};
+ 	};
+ 
+ 	L2switch@2,0 {
+@@ -182,14 +128,6 @@
+ 		phy_type = "ulpi";
+ 		dr_mode = "host";
+ 	};
+-
+-	/* USB2 is shared with localbus. It is used
+-	   only in case of SPI and SD boot after
+-	   appropriate device-tree fixup done by uboot */
+-	usb@23000 {
+-		phy_type = "ulpi";
+-		dr_mode = "host";
+-	};
+ 
+ 	mdio@24000 {
+ 		phy0: ethernet-phy@0{
+--- a/arch/powerpc/boot/dts/fsl/p1020si-post.dtsi
++++ b/arch/powerpc/boot/dts/fsl/p1020si-post.dtsi
+@@ -146,10 +146,6 @@
+ 	usb@22000 {
+ 		compatible = "fsl-usb2-dr-v1.6", "fsl-usb2-dr";
+ 	};
+-/include/ "pq3-usb2-dr-1.dtsi"
+-	usb@23000 {
+-		compatible = "fsl-usb2-dr-v1.6", "fsl-usb2-dr";
+-	};
+ 
+ /include/ "pq3-esdhc-0.dtsi"
+ 	sdhc@2e000 {

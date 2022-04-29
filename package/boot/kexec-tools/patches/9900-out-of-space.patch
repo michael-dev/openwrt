@@ -1,0 +1,12 @@
+diff --git a/kexec/arch/ppc/fixup_dtb.c b/kexec/arch/ppc/fixup_dtb.c
+--- a/kexec/arch/ppc/fixup_dtb.c	2016-10-14 02:08:40.527866113 +0200
++++ b/kexec/arch/ppc/fixup_dtb.c	2016-10-14 02:09:05.816238024 +0200
+@@ -356,6 +356,8 @@ char *fixup_dtb_init(struct kexec_info *
+ 	/* info->nr_segments just a guide, will grow by at least EXPAND_GRANULARITY */
+ 	blob_buf = expand_buf(info->nr_segments * sizeof(struct fdt_reserve_entry),
+ 				 blob_buf, blob_size);
++	blob_buf = expand_buf(5 * sizeof(struct fdt_reserve_entry),
++				 blob_buf, blob_size);
+ 
+ 	/* add reserve region for *THIS* fdt */
+ 	*dtb_addr = locate_hole(info, *blob_size, 0,

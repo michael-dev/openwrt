@@ -1,0 +1,16 @@
+--- a/arch/powerpc/boot/dts/p1020wlan.dtsi
++++ b/arch/powerpc/boot/dts/p1020wlan.dtsi
+@@ -85,7 +85,12 @@
+ 		reg = <0x1 0x0 0x00040000>;
+ 
+ 		partition@0 {
+-			reg = <0x0 0x10000000>;
++			reg = <0x0 0x00800000>;
++			label = "nand-mtdoops";
++		};
++
++		partition@1 {
++			reg = <0x00800000 0x0f800000>;
+ 			label = "nand-rootfs";
+ 		};
+ 

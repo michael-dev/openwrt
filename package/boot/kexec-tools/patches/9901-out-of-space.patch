@@ -1,0 +1,27 @@
+Try to fix 
+
+ WARNING: could not set linux,initrd-end FDT_ERR_NOSPACE
+
+diff a/kexec/arch/ppc/fixup_dtb.c b/kexec/arch/ppc/fixup_dtb.c
+--- a/kexec/arch/ppc/fixup_dtb.c.orig	2016-10-14 02:34:25.778564417 +0200
++++ b/kexec/arch/ppc/fixup_dtb.c	2016-10-14 02:35:04.431133615 +0200
+@@ -305,9 +305,6 @@ static void fixup_initrd(char *blob_buf)
+ 		return;
+ 	}
+ 
+-	fdt_delprop(blob_buf, nodeoffset, "linux,initrd-start");
+-	fdt_delprop(blob_buf, nodeoffset, "linux,initrd-end");
+-
+ 	if ((reuse_initrd || ramdisk) &&
+ 	   ((ramdisk_base != 0) && (ramdisk_size != 0))) {
+ 		tmp = ramdisk_base;
+@@ -328,6 +325,9 @@ static void fixup_initrd(char *blob_buf)
+ 				fdt_strerror(err));
+ 				return;
+ 		}
++	} else {
++		fdt_delprop(blob_buf, nodeoffset, "linux,initrd-start");
++		fdt_delprop(blob_buf, nodeoffset, "linux,initrd-end");
+ 	}
+ }
+ 

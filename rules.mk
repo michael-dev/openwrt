@@ -298,6 +298,9 @@ ifneq ($(CONFIG_CCACHE),)
   TARGET_CXX:= ccache_cxx
   HOSTCC:= ccache $(HOSTCC)
   HOSTCXX:= ccache $(HOSTCXX)
+# DISTCC
+  CCACHE_PREFIX:=distcc
+  export CCACHE_PREFIX
 endif
 
 TARGET_CONFIGURE_OPTS = \

@@ -1,0 +1,35 @@
+From 20dc732d52d066cc40b2390eae8c2c50a2cd9ea1 Mon Sep 17 00:00:00 2001
+From: Michael Braun <michael-dev@fami-braun.de>
+Date: Sun, 11 Aug 2019 12:36:32 +0200
+Subject: [PATCHv2] netfilter: nfnetlink_log:add support for VLAN information
+To: netfilter-devel@vger.kernel.org
+Cc: michael-dev@fami-braun.de
+
+Currently, there is no vlan information (e.g. when used with a vlan aware
+bridge) passed to userspache, HWHEADER will contain an 08 00 (ip) suffix
+even for tagged ip packets.
+
+Therefore, add an extra netlink attribute that passes the vlan information
+to userspace similarly to 15824ab29f for nfqueue.
+
+Signed-off-by: Michael Braun <michael-dev@fami-braun.de>
+
+--
+v2: mirror nfqueue behaviour
+---
+ include/uapi/linux/netfilter/nfnetlink_log.h | 11 ++++++
+ net/netfilter/nf_log_common.c                |  2 +
+ net/netfilter/nfnetlink_log.c                | 40 ++++++++++++++++++++
+ 3 files changed, 53 insertions(+)
+
+--- a/net/netfilter/nf_log_common.c
++++ b/net/netfilter/nf_log_common.c
+@@ -168,6 +168,8 @@ nf_log_dump_packet_common(struct nf_log_
+ 	if (physoutdev && out != physoutdev)
+ 		nf_log_buf_add(m, "PHYSOUT=%s ", physoutdev->name);
+ #endif
++	if (skb_vlan_tag_present(skb))
++		nf_log_buf_add(m, "VLAN=%d ", skb_vlan_tag_get_id(skb));
+ }
+ EXPORT_SYMBOL_GPL(nf_log_dump_packet_common);
+ 
