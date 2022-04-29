@@ -1,0 +1,11 @@
+--- a/lib/netfilter/log_msg_obj.c
++++ b/lib/netfilter/log_msg_obj.c
+@@ -126,7 +126,7 @@ static void log_msg_dump(struct nl_objec
+ 						 msg->log_msg_physindev,
+ 						 buf, sizeof(buf)));
+ 		else
+-			nl_dump(p, "IN=%d ", msg->log_msg_physindev);
++			nl_dump(p, "PHYSIN=%d ", msg->log_msg_physindev);
+ 	}
+ 
+ 	if (msg->ce_mask & LOG_MSG_ATTR_OUTDEV) {

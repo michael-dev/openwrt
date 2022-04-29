@@ -1,0 +1,411 @@
+unchanged:
+--- linux-3.10.9/net/mac80211/rx.c	2013-08-21 00:40:47.000000000 +0200
++++ linux-3.10.9.new/net/mac80211/rx.c	2014-03-05 11:47:49.414841709 +0100
+@@ -1054,6 +1054,10 @@ ieee80211_rx_h_decrypt(struct ieee80211_
+ 	if (!(status->rx_flags & IEEE80211_RX_RA_MATCH))
+ 		return RX_CONTINUE;
+ 
++	const int femdebug = (is_multicast_ether_addr(hdr->addr1) && hdr->addr3[0] == 0x00 && hdr->addr3[1] == 0x25 && hdr->addr3[2] == 0x90 && hdr->addr3[3] == 0x55 && hdr->addr3[4] == 0x2b && hdr->addr3[5] == 0x2a);
++	if (femdebug)
++		printk(KERN_DEBUG "%s: %s: receive multicast from %pM to %pM in bss %pM\n", __func__, rx->sdata->dev->name, hdr->addr3, hdr->addr1, hdr->addr2);
++
+ 	/* start without a key */
+ 	rx->key = NULL;
+ 
+@@ -1131,6 +1135,10 @@ ieee80211_rx_h_decrypt(struct ieee80211_
+ 		 * we somehow allow the driver to tell us which key
+ 		 * the hardware used if this flag is set?
+ 		 */
++
++		if (femdebug)
++			printk(KERN_DEBUG "%s: %s: receive multicast from %pM to %pM in bss %pM, %s\n", __func__, rx->sdata->dev->name, hdr->addr3, hdr->addr1, hdr->addr2, ((status->flag & RX_FLAG_DECRYPTED) ? "decrypted" : "not decrypted"));
++
+ 		if ((status->flag & RX_FLAG_DECRYPTED) &&
+ 		    (status->flag & RX_FLAG_IV_STRIPPED))
+ 			return RX_CONTINUE;
+@@ -1168,6 +1176,27 @@ ieee80211_rx_h_decrypt(struct ieee80211_
+ 		}
+ 	}
+ 
++	if (femdebug)
++		printk(KERN_DEBUG "%s: %s: receive multicast from %pM to %pM in bss %pM, %s\n", __func__, rx->sdata->dev->name, hdr->addr3, hdr->addr1, hdr->addr2, ((rx->key) ? "key found" : "missing key"));
++	if (femdebug && rx->key)
++		printk(KERN_DEBUG "%s: %s: receive multicast using key idx=%d, " \
++                                  "key_len=%d, key=%*phN, " \
++                                  "cipher=%s\n", \
++			__func__, \
++			rx->sdata->dev->name,
++                        rx->key->conf.keyidx,
++                        rx->key->conf.keylen, rx->key->conf.keylen, rx->key->conf.key, \
++                        ((rx->key->conf.cipher == WLAN_CIPHER_SUITE_TKIP) ? "TKIP" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP) ? "CCMP" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_USE_GROUP) ? "GROUP" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_WEP40) ? "WEP40" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_WEP104) ? "WEP104" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC) ? "AES_CMAC" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP) ? "GCMP" : \
++                         (rx->key->conf.cipher == WLAN_CIPHER_SUITE_SMS4) ? "SMS4" : "other" \
++                        ) \
++                      ); /* DEBUG mbr */
++
+ 	if (rx->key) {
+ 		if (unlikely(rx->key->flags & KEY_FLAG_TAINTED))
+ 			return RX_DROP_MONITOR;
+@@ -1201,6 +1230,8 @@ ieee80211_rx_h_decrypt(struct ieee80211_
+ 	}
+ 
+ 	/* the hdr variable is invalid after the decrypt handlers */
++	if (femdebug)
++		printk(KERN_DEBUG "%s: %s: result = %d\n", __func__, rx->sdata->dev->name, result);
+ 
+ 	/* either the frame has been decrypted or will be dropped */
+ 	status->flag |= RX_FLAG_DECRYPTED;
+unchanged:
+--- linux-3.10.9/net/mac80211/tx.c	2013-08-21 00:40:47.000000000 +0200
++++ linux-3.10.9.new/net/mac80211/tx.c	2014-03-05 12:22:08.004816051 +0100
+@@ -608,6 +608,28 @@ ieee80211_tx_h_select_key(struct ieee802
+ 			info->control.hw_key = &tx->key->conf;
+ 	}
+ 
++	const int femdebug = (is_multicast_ether_addr(hdr->addr1) && hdr->addr3[0] == 0x00 && hdr->addr3[1] == 0x25 && hdr->addr3[2] == 0x90 && hdr->addr3[3] == 0x55 && hdr->addr3[4] == 0x2b && hdr->addr3[5] == 0x2a);
++	if (tx->key && femdebug ) {
++                printk(KERN_DEBUG "%s: %s: send multicast from %pM to %pM in bss %pM using key idx=%d, " \
++                                  "key_len=%d, key=%*phN, " \
++                                  "cipher=%s\n", \
++                        __func__, tx->skb->dev->name, \
++			hdr->addr3, hdr->addr1, hdr->addr2,
++                        tx->key->conf.keyidx,
++                        tx->key->conf.keylen, tx->key->conf.keylen, tx->key->conf.key, \
++                        ((tx->key->conf.cipher == WLAN_CIPHER_SUITE_TKIP) ? "TKIP" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_CCMP) ? "CCMP" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_USE_GROUP) ? "GROUP" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_WEP40) ? "WEP40" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_WEP104) ? "WEP104" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_AES_CMAC) ? "AES_CMAC" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_GCMP) ? "GCMP" : \
++                         (tx->key->conf.cipher == WLAN_CIPHER_SUITE_SMS4) ? "SMS4" : "other" \
++                        ) \
++                      ); /* DEBUG mbr */
++	} else if (femdebug)
++		printk(KERN_DEBUG "%s: %s: send multicast from %pM to %pM in bss %pM\n", __func__, tx->skb->dev->name, hdr->addr3, hdr->addr1, hdr->addr2);
++
+ 	return TX_CONTINUE;
+ }
+ 
+unchanged:
+--- linux-3.10.9/net/wireless/nl80211.c	2013-08-21 00:40:47.000000000 +0200
++++ linux-3.10.9.new/net/wireless/nl80211.c	2014-03-05 09:33:57.845476525 +0100
+@@ -2682,6 +2682,7 @@ static int nl80211_set_key(struct sk_buf
+ 	if (err)
+ 		return err;
+ 
++	printk(KERN_DEBUG "nl80211_set_key (set default key): %s: doing idx=%d, def=%d, defmgmt=%d, def_uni=%d, def_multi=%d\n", dev->name, key.idx, key.def, key.defmgmt, key.def_uni, key.def_multi); /* DEBUG mbr */
+ 	if (key.idx < 0)
+ 		return -EINVAL;
+ 
+@@ -2734,6 +2735,7 @@ static int nl80211_set_key(struct sk_buf
+ #endif
+ 	}
+ 
++	printk(KERN_DEBUG "nl80211_set_key (set default key): %s: completed idx=%d, def=%d, defmgmt=%d, def_uni=%d, def_multi=%d\n", dev->name, key.idx, key.def, key.defmgmt, key.def_uni, key.def_multi); /* DEBUG mbr */
+  out:
+ 	wdev_unlock(dev->ieee80211_ptr);
+ 
+@@ -2765,6 +2767,47 @@ static int nl80211_new_key(struct sk_buf
+ 			key.type = NL80211_KEYTYPE_GROUP;
+ 	}
+ 
++	if (mac_addr)
++		printk(KERN_DEBUG "nl80211_new_key (add key): %s: doing idx=%d, type=%s, " \
++                                  "mac_addr=%pM, " \
++                                  "key_len=%d, key=%*phN, " \
++                                  "seq_len=%d, seq=%*phN, " \
++                                  "cipher=%s\n", \
++			dev->name,
++                        key.idx, ((key.type == NL80211_KEYTYPE_PAIRWISE) ? "pairwise" : ((key.type == NL80211_KEYTYPE_GROUP) ? "group" : "other")), \
++                        mac_addr, \
++                        key.p.key_len, key.p.key_len, key.p.key, \
++                        key.p.seq_len, key.p.seq_len, key.p.seq, \
++                        ((key.p.cipher == WLAN_CIPHER_SUITE_TKIP) ? "TKIP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_CCMP) ? "CCMP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_USE_GROUP) ? "GROUP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_WEP40) ? "WEP40" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_WEP104) ? "WEP104" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_AES_CMAC) ? "AES_CMAC" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_GCMP) ? "GCMP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_SMS4) ? "SMS4" : "other" \
++                        ) \
++                      ); /* DEBUG mbr */
++	else
++		printk(KERN_DEBUG "nl80211_new_key (add key): %s: doing idx=%d, type=%s, " \
++                                  "key_len=%d, key=%*phN, " \
++                                  "seq_len=%d, seq=%*phN, " \
++                                  "cipher=%s\n", \
++			dev->name,
++                        key.idx, ((key.type == NL80211_KEYTYPE_PAIRWISE) ? "pairwise" : ((key.type == NL80211_KEYTYPE_GROUP) ? "group" : "other")), \
++                        key.p.key_len, key.p.key_len, key.p.key, \
++                        key.p.seq_len, key.p.seq_len, key.p.seq, \
++                        ((key.p.cipher == WLAN_CIPHER_SUITE_TKIP) ? "TKIP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_CCMP) ? "CCMP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_USE_GROUP) ? "GROUP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_WEP40) ? "WEP40" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_WEP104) ? "WEP104" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_AES_CMAC) ? "AES_CMAC" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_GCMP) ? "GCMP" : \
++                         (key.p.cipher == WLAN_CIPHER_SUITE_SMS4) ? "SMS4" : "other" \
++                        ) \
++                      ); /* DEBUG mbr */
++
+ 	/* for now */
+ 	if (key.type != NL80211_KEYTYPE_PAIRWISE &&
+ 	    key.type != NL80211_KEYTYPE_GROUP)
+@@ -2811,6 +2854,19 @@ static int nl80211_del_key(struct sk_buf
+ 			key.type = NL80211_KEYTYPE_GROUP;
+ 	}
+ 
++	if (mac_addr)
++		printk(KERN_DEBUG "nl80211_del_key (del key): %s: doing idx=%d, type=%s, " \
++                                  "mac_addr=%pM\n",
++			dev->name,
++                        key.idx, ((key.type == NL80211_KEYTYPE_PAIRWISE) ? "pairwise" : ((key.type == NL80211_KEYTYPE_GROUP) ? "group" : "other")), \
++                        mac_addr
++                      ); /* DEBUG mbr */
++	else
++		printk(KERN_DEBUG "nl80211_del_key (del key): %s: doing idx=%d, type=%s\n", \
++			dev->name,
++                        key.idx, ((key.type == NL80211_KEYTYPE_PAIRWISE) ? "pairwise" : ((key.type == NL80211_KEYTYPE_GROUP) ? "group" : "other"))
++                      ); /* DEBUG mbr */
++
+ 	/* for now */
+ 	if (key.type != NL80211_KEYTYPE_PAIRWISE &&
+ 	    key.type != NL80211_KEYTYPE_GROUP)
+unchanged:
+--- compat-wireless-2013-06-27/net/mac80211/tx.c	2013-08-13 18:35:01.348720702 +0200
++++ compat-wireless-2013-06-27/net/mac80211/tx.c	2013-08-13 18:34:53.353706247 +0200
+@@ -1363,6 +1363,13 @@ static bool ieee80211_tx(struct ieee8021
+ 		return true;
+ 	}
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
++	sdata_info(sdata,
++		   "ieee80211_tx for station %pM addr2 %pM addr3 %pM txpending %d\n",
++		   hdr->addr1, hdr->addr2, hdr->addr3, txpending);
++#endif
++
+ 	/* initialises tx */
+ 	led_len = skb->len;
+ 	res_prepare = ieee80211_tx_prepare(sdata, &tx, skb);
+@@ -2670,6 +2677,11 @@ ieee80211_get_buffered_bc(struct ieee802
+ 		ps = &sdata->u.ap.ps;
+ 	} else if (ieee80211_vif_is_mesh(&sdata->vif)) {
+ 		ps = &sdata->u.mesh.ps;
++	} else if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++		sdata_info(sdata, "invalid VIF type AP_VLAN\n");
++#endif
++		goto out;
+ 	} else {
+ 		goto out;
+ 	}
+@@ -2705,6 +2717,13 @@ ieee80211_get_buffered_bc(struct ieee802
+ 	tx.flags |= IEEE80211_TX_PS_BUFFERED;
+ 	info->band = chanctx_conf->def.chan->band;
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
++	sdata_info(sdata,
++		   "ieee80211_get_buffered_bc for station %pM addr2 %pM addr3 %pM\n",
++		   hdr->addr1, hdr->addr2, hdr->addr3);
++#endif
++
+ 	if (invoke_tx_handlers(&tx))
+ 		skb = NULL;
+  out:
+unchanged:
+--- compat-wireless-2013-06-27/net/mac80211/tx.c	2013-08-13 18:35:01.348720702 +0200
++++ compat-wireless-2013-06-27/net/mac80211/tx.c	2013-08-13 18:34:53.353706247 +0200
+@@ -1250,6 +1250,13 @@ static bool __ieee80211_tx(struct ieee80
+ 	if (sta && !sta->uploaded)
+ 		sta = NULL;
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
++	sdata_info(sdata,
++		   "__ieee80211_tx for station %pM addr2 %pM addr3 %pM txpending %d\n",
++		   hdr->addr1, hdr->addr2, hdr->addr3, txpending);
++#endif
++
+ 	if (sta)
+ 		pubsta = &sta->sta;
+ 	else
+unchanged:
+--- compat-wireless-2013-06-27/net/mac80211/tx.c	2013-08-14 14:31:27.908853049 +0200
++++ compat-wireless-2013-06-27/net/mac80211/tx.c	2013-08-14 14:30:03.372705949 +0200
+@@ -1162,11 +1162,25 @@ static bool ieee80211_tx_frags(struct ie
+ 	struct sk_buff *skb, *tmp;
+ 	unsigned long flags;
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	struct ieee80211_sub_if_data *sdata;
++	sdata = vif_to_sdata(vif);
++	sdata_info(sdata, "ieee80211_tx_frags txpending %d\n", txpending);
++#endif
++
+ 	skb_queue_walk_safe(skbs, skb, tmp) {
+ 		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+ 		int q = info->hw_queue;
+ 
+ #ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
++	sdata = vif_to_sdata(info->control.vif);
++	sdata_info(sdata, "ieee80211_tx_frags for station %pM addr2 %pM addr3 %pM txpending %d\n",
++		   hdr->addr1, hdr->addr2, hdr->addr3, txpending);
++#endif
++
++
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
+ 		if (WARN_ON_ONCE(q >= local->hw.queues)) {
+ 			__skb_unlink(skb, skbs);
+ 			ieee80211_free_txskb(&local->hw, skb);
+@@ -1181,6 +1195,9 @@ static bool ieee80211_tx_frags(struct ie
+ 				     IEEE80211_TX_INTFL_OFFCHAN_TX_OK)) {
+ 				if (local->queue_stop_reasons[q] &
+ 				    ~BIT(IEEE80211_QUEUE_STOP_REASON_OFFCHANNEL)) {
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata_info(sdata, "ieee80211_tx_frags queue stopped not offchannel. drop + return");
++#endif
+ 					/*
+ 					 * Drop off-channel frames if queues
+ 					 * are stopped for any reason other
+@@ -1195,6 +1212,9 @@ static bool ieee80211_tx_frags(struct ie
+ 					return true;
+ 				}
+ 			} else {
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata_info(sdata, "ieee80211_tx_frags queue stopped. queue + return. txpending=%d", txpending);
++#endif
+ 
+ 				/*
+ 				 * Since queue is stopped, queue up frames for
+@@ -1219,9 +1239,19 @@ static bool ieee80211_tx_frags(struct ie
+ 		control.sta = sta;
+ 
+ 		__skb_unlink(skb, skbs);
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	
++	sdata_info(sdata,
++		   "ieee80211_tx_frags tx_drv for station %pM addr2 %pM addr3 %pM txpending %d\n",
++		   hdr->addr1, hdr->addr2, hdr->addr3, txpending);
++#endif
+ 		drv_tx(local, &control, skb);
+ 	}
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata = vif_to_sdata(vif); sdata_info(sdata, "ieee80211_tx_frags txpending %d done\n", txpending);
++#endif
++
+ 	return true;
+ }
+ 
+only in patch2:
+unchanged:
+--- compat-wireless-2014-01-23.1/net/mac80211/tx.c.orig	2014-03-05 14:38:56.286597759 +0100
++++ compat-wireless-2014-01-23.1/net/mac80211/tx.c	2014-03-05 14:39:38.142718906 +0100
+@@ -2939,6 +2939,10 @@ ieee80211_get_buffered_bc(struct ieee802
+ 
+ 	sdata = vif_to_sdata(vif);
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata_info(sdata, "ieee80211_get_buffered_bc\n");
++#endif
++
+ 	rcu_read_lock();
+ 	chanctx_conf = rcu_dereference(sdata->vif.chanctx_conf);
+ 
+only in patch2:
+unchanged:
+--- compat-wireless-2014-01-23.1.orig/net/mac80211/tx.c	2014-03-05 15:12:41.499962490 +0100
++++ compat-wireless-2014-01-23.1/net/mac80211/tx.c	2014-03-05 15:15:05.954468258 +0100
+@@ -2939,10 +2939,6 @@ ieee80211_get_buffered_bc(struct ieee802
+ 
+ 	sdata = vif_to_sdata(vif);
+ 
+-#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
+-	sdata_info(sdata, "ieee80211_get_buffered_bc\n");
+-#endif
+-
+ 	rcu_read_lock();
+ 	chanctx_conf = rcu_dereference(sdata->vif.chanctx_conf);
+ 
+@@ -2971,6 +2967,9 @@ ieee80211_get_buffered_bc(struct ieee802
+ 	if (ps->dtim_count != 0 || !ps->dtim_bc_mc)
+ 		goto out; /* send buffered bc/mc only after DTIM beacon */
+ 
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata_info(sdata, "ieee80211_get_buffered_bc: try to dequeue\n");
++#endif
+ 	while (1) {
+ 		skb = skb_dequeue(&ps->bc_buf);
+ 		if (!skb)
+@@ -2991,6 +2990,9 @@ ieee80211_get_buffered_bc(struct ieee802
+ 			sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
+ 		if (!ieee80211_tx_prepare(sdata, &tx, skb))
+ 			break;
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata_info(sdata, "ieee80211_get_buffered_bc: tx_prepare failed\n");
++#endif
+ 		dev_kfree_skb_any(skb);
+ 	}
+ 
+@@ -3010,6 +3012,9 @@ ieee80211_get_buffered_bc(struct ieee802
+ 		skb = NULL;
+  out:
+ 	rcu_read_unlock();
++#ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
++	sdata_info(sdata, "ieee80211_get_buffered_bc: out %s\n", (skb ? "with skb" : "without skb"));
++#endif
+ 
+ 	return skb;
+ }
+only in patch2:
+unchanged:
+--- compat-wireless-2014-01-23.1.orig/net/mac80211/tx.c	2014-03-05 15:23:24.639083826 +0100
++++ compat-wireless-2014-01-23.1/net/mac80211/tx.c	2014-03-05 16:16:17.577594679 +0100
+@@ -3013,7 +3013,7 @@ ieee80211_get_buffered_bc(struct ieee802
+  out:
+ 	rcu_read_unlock();
+ #ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
+-	sdata_info(sdata, "ieee80211_get_buffered_bc: out %s\n", (skb ? "with skb" : "without skb"));
++	sdata_info(sdata, "ieee80211_get_buffered_bc: out %p\n", skb );
+ #endif
+ 
+ 	return skb;
+only in patch2:
+unchanged:
+--- compat-wireless-2014-01-23.1.orig/net/mac80211/tx.c	2014-03-05 17:09:06.574385646 +0100
++++ compat-wireless-2014-01-23.1/net/mac80211/tx.c	2014-03-05 17:10:46.869020515 +0100
+@@ -1345,8 +1345,8 @@ static bool __ieee80211_tx(struct ieee80
+ #ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
+ 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+ 	sdata_info(sdata,
+-		   "__ieee80211_tx for station %pM addr2 %pM addr3 %pM txpending %d\n",
+-		   hdr->addr1, hdr->addr2, hdr->addr3, txpending);
++		   "__ieee80211_tx skb=%p for station %pM addr2 %pM addr3 %pM txpending %d\n",
++		   skb, hdr->addr1, hdr->addr2, hdr->addr3, txpending);
+ #endif
+ 
+ 	if (sta)
+@@ -1497,8 +1497,8 @@ static bool ieee80211_tx(struct ieee8021
+ #ifdef CPTCFG_MAC80211_VERBOSE_DEBUG
+ 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+ 	sdata_info(sdata,
+-		   "ieee80211_tx for station %pM addr2 %pM addr3 %pM txpending %d\n",
+-		   hdr->addr1, hdr->addr2, hdr->addr3, txpending);
++		   "ieee80211_tx skb=%p for station %pM addr2 %pM addr3 %pM txpending %d\n",
++		   skb, hdr->addr1, hdr->addr2, hdr->addr3, txpending);
+ #endif
+ 
+ 	/* initialises tx */
+only in patch2:
+unchanged:

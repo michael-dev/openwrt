@@ -57,6 +57,54 @@ endef
 $(eval $(call KernelPackage,bonding))
 
 
+define KernelPackage/llc
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=ANSI/IEEE 802.2 LLC support
+  KCONFIG:=CONFIG_LLC
+  FILES:= \
+	$(LINUX_DIR)/net/llc/llc.ko \
+	$(LINUX_DIR)/net/802/p8022.ko \
+	$(LINUX_DIR)/net/802/psnap.ko
+  AUTOLOAD:=$(call AutoLoad,09,llc p8022 psnap)
+endef
+
+define KernelPackage/llc/description
+ Kernel module for ANSI/IEEE 802.2 LLC support.
+endef
+
+$(eval $(call KernelPackage,llc))
+
+define KernelPackage/stp
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=Ethernet Spanning Tree Protocol support
+  DEPENDS:=+kmod-llc
+  KCONFIG:=CONFIG_STP
+  FILES:=$(LINUX_DIR)/net/802/stp.ko
+  AUTOLOAD:=$(call AutoLoad,10,stp)
+endef
+
+define KernelPackage/stp/description
+ Kernel module for Ethernet Spanning Tree Protocol support.
+endef
+
+$(eval $(call KernelPackage,stp))
+
+define KernelPackage/8021q
+  SUBMENU:=$(NETWORK_SUPPORT_MENU)
+  TITLE:=802.1Q VLAN support
+  KCONFIG:=CONFIG_VLAN_8021Q \
+		CONFIG_VLAN_8021Q_GVRP=n
+  FILES:=$(LINUX_DIR)/net/8021q/8021q.ko
+  AUTOLOAD:=$(call AutoLoad,12,8021q)
+endef
+
+define KernelPackage/8021q/description
+ Kernel module for 802.1Q VLAN support
+endef
+
+$(eval $(call KernelPackage,8021q))
+
+
 define KernelPackage/udptunnel4
   SUBMENU:=$(NETWORK_SUPPORT_MENU)
   TITLE:=IPv4 UDP tunneling support

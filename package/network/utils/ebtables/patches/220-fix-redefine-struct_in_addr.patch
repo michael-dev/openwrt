@@ -1,0 +1,11 @@
+--- ebtables-v2.0.10-4/include/ethernetdb.h.orig	2016-07-21 15:32:04.527181555 +0200
++++ ebtables-v2.0.10-4/include/ethernetdb.h	2016-07-21 15:32:18.891399965 +0200
+@@ -22,7 +22,7 @@
+ #define	_ETHERNETDB_H	1
+ 
+ #include <features.h>
+-#include <netinet/in.h>
++#include <linux/in.h>
+ #include <stdint.h>
+ 
+ /* Absolute file name for network data base files.  */

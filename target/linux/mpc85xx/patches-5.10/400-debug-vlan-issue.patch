@@ -1,0 +1,20 @@
+--- a/net/netfilter/nfnetlink_log.c
++++ b/net/netfilter/nfnetlink_log.c
+@@ -391,9 +391,17 @@ nfulnl_timer(struct timer_list *t)
+ #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+ static int nfulnl_put_bridge(struct nfulnl_instance *inst, struct sk_buff *skb)
+ {
++	WARN_ON_ONCE(!skb_mac_header_was_set(skb));
++
+ 	if (!skb_mac_header_was_set(skb))
+ 		return 0;
+ 
++	if (!skb_vlan_tag_present(skb) &&
++	    ntohs(skb->protocol) != 0x88F5) {
++		WARN_ON_ONCE(1);
++		printk_once("skb->protocol = 0x%.4X\n", ntohs(skb->protocol));
++	}
++
+ 	if (skb_vlan_tag_present(skb)) {
+ 		struct nlattr *nest;
+ 

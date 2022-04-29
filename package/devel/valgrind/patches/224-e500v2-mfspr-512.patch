@@ -1,0 +1,74 @@
+diff -rcp valgrind-3.8.1.orig/VEX/priv/guest_ppc_defs.h valgrind-3.8.1/VEX/priv/guest_ppc_defs.h
+*** valgrind-3.8.1.orig/VEX/priv/guest_ppc_defs.h	2013-06-05 20:19:56.727301067 +0200
+--- valgrind-3.8.1/VEX/priv/guest_ppc_defs.h	2013-06-05 21:22:38.091858200 +0200
+*************** extern UInt ppc32g_dirtyhelper_MFSPR_268
+*** 149,154 ****
+--- 149,156 ----
+  
+  extern UInt ppc32g_dirtyhelper_MFSPR_287 ( void );
+  
++ extern UInt ppc32g_dirtyhelper_MFSPR_512 ( void );
++ 
+  extern UInt ppc32g_dirtyhelper_MFSPR_526_527 ( UInt );
+  
+  extern void ppc32g_dirtyhelper_LVS ( VexGuestPPC32State* gst,
+diff -rcp valgrind-3.8.1.orig/VEX/priv/guest_ppc_helpers.c valgrind-3.8.1/VEX/priv/guest_ppc_helpers.c
+*** valgrind-3.8.1.orig/VEX/priv/guest_ppc_helpers.c	2013-06-05 20:19:56.728301069 +0200
+--- valgrind-3.8.1/VEX/priv/guest_ppc_helpers.c	2013-06-05 21:23:07.539910213 +0200
+*************** UInt ppc32g_dirtyhelper_MFSPR_287 ( void
+*** 119,124 ****
+--- 119,139 ----
+  #  endif
+  }
+  
++ 
++ /* CALLED FROM GENERATED CODE */
++ /* DIRTY HELPER (I'm not really sure what the side effects are) */
++ UInt ppc32g_dirtyhelper_MFSPR_512 ( void )
++ {
++ #  if defined(__powerpc__) || defined(_AIX)
++    UInt spr;
++    __asm__ __volatile__("mfspr %0,512" : "=b"(spr));
++    return spr;
++ #  else
++    return 0;
++ #  endif
++ }
++ 
++ 
+  /* CALLED FROM GENERATED CODE */
+  /* DIRTY HELPER (non-referentially transparent) */
+  UInt ppc32g_dirtyhelper_MFSPR_526_527 ( UInt r527 )
+diff -rcp valgrind-3.8.1.orig/VEX/priv/guest_ppc_toIR.c valgrind-3.8.1/VEX/priv/guest_ppc_toIR.c
+*** valgrind-3.8.1.orig/VEX/priv/guest_ppc_toIR.c	2013-06-05 20:19:56.731301074 +0200
+--- valgrind-3.8.1/VEX/priv/guest_ppc_toIR.c	2013-06-05 21:24:06.553014448 +0200
+*************** static Bool dis_proc_ctl ( VexAbiInfo* v
+*** 6626,6631 ****
+--- 6626,6652 ----
+        }
+  
+  
++       /* e500v2 */
++       case 512: /* 0x200 */ {
++          IRTemp   val  = newTemp(Ity_I32);
++          IRExpr** args = mkIRExprVec_0();
++          IRDirty* d    = unsafeIRDirty_1_N(
++                             val,
++                             0/*regparms*/,
++                             "ppc32g_dirtyhelper_MFSPR_512",
++                             fnptr_to_fnentry
++                                (vbi, &ppc32g_dirtyhelper_MFSPR_512),
++                             args
++                          );
++          /* execute the dirty call, dumping the result in val. */
++          stmt( IRStmt_Dirty(d) );
++          putIReg( rD_addr,
++                   mkWidenFrom32(ty, mkexpr(val), False/*unsigned*/) );
++          DIP("mfspr r%u,%u", rD_addr, (UInt)SPR);
++          break;
++       }
++ 
++ 
+        case 526 /* 0x20E */:
+        case 527 /* 0x20F */: {
+           UInt     arg  = SPR==526 ? 0 : 1;

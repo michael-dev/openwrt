@@ -1,0 +1,41 @@
+--- a/drivers/mtd/mtdoops.c
++++ b/drivers/mtd/mtdoops.c
+@@ -18,6 +18,7 @@
+ #include <linux/interrupt.h>
+ #include <linux/mtd/mtd.h>
+ #include <linux/kmsg_dump.h>
++#include <linux/spinlock.h>
+ 
+ /* Maximum MTD partition size */
+ #define MTDOOPS_MAX_MTD_SIZE (8 * 1024 * 1024)
+@@ -53,6 +54,8 @@ static struct mtdoops_context {
+ 	unsigned long *oops_page_used;
+ 
+ 	void *oops_buf;
++
++	spinlock_t lock;
+ } oops_cxt;
+ 
+ static void mark_page_used(struct mtdoops_context *cxt, int page)
+@@ -276,6 +279,12 @@ static void mtdoops_do_dump(struct kmsg_
+ 	if (reason == KMSG_DUMP_OOPS && !dump_oops)
+ 		return;
+ 
++	/* only one instance should run in parallel */
++	spin_lock(&cxt->lock);
++
++	/* write out previous data */
++	flush_work(&cxt->work_write);
++
+ 	kmsg_dump_get_buffer(dumper, true, cxt->oops_buf + MTDOOPS_HEADER_SIZE,
+ 			     record_size - MTDOOPS_HEADER_SIZE, NULL);
+ 
+@@ -382,6 +391,8 @@ static int __init mtdoops_init(void)
+ 		return -EINVAL;
+ 	}
+ 
++	spin_lock_init(&cxt->lock);
++
+ 	/* Setup the MTD device to use */
+ 	cxt->mtd_index = -1;
+ 	mtd_index = simple_strtoul(mtddev, &endp, 0);

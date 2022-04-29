@@ -301,7 +301,11 @@ endif
 
 ifdef CONFIG_TARGET_ROOTFS_CPIOGZ
   define Image/Build/cpiogz
-	( cd $(TARGET_DIR); find . | cpio -o -H newc -R root:root | gzip -9n >$(BIN_DIR)/$(IMG_ROOTFS).cpio.gz )
+	#( cd $(TARGET_DIR); find . | cpio -o -H newc -R root:root | gzip -9n >$(BIN_DIR)/$(IMG_ROOTFS).cpio.gz )
+	cd $(TARGET_DIR); find . | cpio -R 0:0 -o -H newc -R root:root | xz --check=crc32 -9 >$(BIN_DIR)/$(IMG_ROOTFS).cpio.xz
+	#cd $(TARGET_DIR); find . | cpio -R 0:0 -o -H newc -R root:root > $(BIN_DIR)/$(IMG_ROOTFS).cpio
+	#/usr/bin/pxz --crc32 -3 $(BIN_DIR)/$(IMG_ROOTFS).cpio
+	#/usr/bin/pxz  -kvf -9 -T8 $(BIN_DIR)/$(IMG_ROOTFS).cpio
   endef
 endif
 

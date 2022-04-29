@@ -1,0 +1,176 @@
+From ab5c69825c2617f11426a3c10d5152e16f20992c Mon Sep 17 00:00:00 2001
+From: Michael Braun <michael-dev@fami-braun.de>
+Date: Wed, 31 Jul 2019 17:30:56 +0200
+Subject: [PATCH 2/6] nflog: add vlan attribute
+
+--
+v2: use new kernel api like for nfqueue
+---
+ include/netlink-private/types.h     |  2 ++
+ include/netlink/netfilter/log_msg.h | 10 ++++++
+ lib/netfilter/log_msg.c             | 36 +++++++++++++++++++
+ lib/netfilter/log_msg_obj.c         | 55 +++++++++++++++++++++++++++++
+ 4 files changed, 103 insertions(+)
+
+--- a/include/netlink-private/types.h
++++ b/include/netlink-private/types.h
+@@ -1015,6 +1015,8 @@ struct nfnl_log_msg {
+ 	uint32_t		log_msg_gid;
+ 	uint32_t		log_msg_seq;
+ 	uint32_t		log_msg_seq_global;
++	uint16_t		log_msg_vlan_tag;
++	uint16_t		log_msg_vlan_proto;
+ };
+ 
+ struct nfnl_queue {
+--- a/include/netlink/netfilter/log_msg.h
++++ b/include/netlink/netfilter/log_msg.h
+@@ -90,6 +90,16 @@ extern void		nfnl_log_msg_set_seq_global
+ extern int		nfnl_log_msg_test_seq_global(const struct nfnl_log_msg *);
+ extern uint32_t		nfnl_log_msg_get_seq_global(const struct nfnl_log_msg *);
+ 
++extern void		nfnl_log_msg_set_vlan_proto(struct nfnl_log_msg *, uint16_t);
++extern int		nfnl_log_msg_test_vlan_proto(const struct nfnl_log_msg *);
++extern uint16_t		nfnl_log_msg_get_vlan_proto(const struct nfnl_log_msg *);
++extern void		nfnl_log_msg_set_vlan_tag(struct nfnl_log_msg *, uint16_t);
++extern int		nfnl_log_msg_test_vlan_tag(const struct nfnl_log_msg *);
++extern uint16_t		nfnl_log_msg_get_vlan_tag(const struct nfnl_log_msg *);
++extern uint16_t		nfnl_log_msg_get_vlan_id(const struct nfnl_log_msg *);
++extern uint16_t		nfnl_log_msg_get_vlan_cfi(const struct nfnl_log_msg *);
++extern uint16_t		nfnl_log_msg_get_vlan_prio(const struct nfnl_log_msg *);
++
+ #ifdef __cplusplus
+ }
+ #endif
+--- a/lib/netfilter/log_msg.c
++++ b/lib/netfilter/log_msg.c
+@@ -50,8 +50,37 @@ static struct nla_policy log_msg_policy[
+ 	[NFULA_GID]			= { .type = NLA_U32 },
+ 	[NFULA_SEQ]			= { .type = NLA_U32 },
+ 	[NFULA_SEQ_GLOBAL]		= { .type = NLA_U32 },
++	[NFULA_VLAN]			= { .type = NLA_NESTED },
+ };
+ 
++static struct nla_policy log_msg_vlan_policy[NFULA_VLAN_MAX+1] = {
++	[NFULA_VLAN_PROTO]		= { .type = NLA_U16 },
++	[NFULA_VLAN_TCI]		= { .type = NLA_U16 },
++};
++
++static int
++nfnlmsg_log_msg_parse_vlan(struct nlattr *attr_full, struct nfnl_log_msg *msg)
++{
++	struct nlattr *tb[NFULA_VLAN_MAX+1];
++	struct nlattr *attr;
++	int err;
++
++	err = nla_parse_nested(tb, NFULA_VLAN_MAX, attr_full,
++			       log_msg_vlan_policy);
++	if (err < 0)
++		return err;
++
++	attr = tb[NFULA_VLAN_PROTO];
++	if (attr)
++		nfnl_log_msg_set_vlan_proto(msg, nla_get_u16(attr));
++
++	attr = tb[NFULA_VLAN_TCI];
++	if (attr)
++		nfnl_log_msg_set_vlan_tag(msg, ntohs(nla_get_u16(attr)));
++
++	return 0;
++}
++
+ int nfnlmsg_log_msg_parse(struct nlmsghdr *nlh, struct nfnl_log_msg **result)
+ {
+ 	struct nfnl_log_msg *msg;
+@@ -148,6 +177,13 @@ int nfnlmsg_log_msg_parse(struct nlmsghd
+ 	if (attr)
+ 		nfnl_log_msg_set_seq_global(msg, ntohl(nla_get_u32(attr)));
+ 
++	attr = tb[NFULA_VLAN];
++	if (attr) {
++		err = nfnlmsg_log_msg_parse_vlan(attr, msg);
++		if (err < 0)
++			goto errout;
++	}
++
+ 	*result = msg;
+ 	return 0;
+ 
+--- a/lib/netfilter/log_msg_obj.c
++++ b/lib/netfilter/log_msg_obj.c
+@@ -34,6 +34,8 @@
+ #define LOG_MSG_ATTR_GID		(1UL << 13)
+ #define LOG_MSG_ATTR_SEQ		(1UL << 14)
+ #define LOG_MSG_ATTR_SEQ_GLOBAL		(1UL << 15)
++#define LOG_MSG_ATTR_VLAN_PROTO		(1UL << 16)
++#define LOG_MSG_ATTR_VLAN_TAG		(1UL << 17)
+ /** @endcond */
+ 
+ static void log_msg_free_data(struct nl_object *c)
+@@ -167,6 +169,12 @@ static void log_msg_dump(struct nl_objec
+ 	if (msg->ce_mask & LOG_MSG_ATTR_SEQ_GLOBAL)
+ 		nl_dump(p, "SEQGLOBAL=%d ", msg->log_msg_seq_global);
+ 
++	if (msg->ce_mask & LOG_MSG_ATTR_VLAN_TAG)
++		nl_dump(p, "VLAN=%d CFI=%d PRIO=%d",
++		        (int) nfnl_log_msg_get_vlan_id(msg),
++		        (int) nfnl_log_msg_get_vlan_cfi(msg),
++		        (int) nfnl_log_msg_get_vlan_prio(msg));
++
+ 	nl_dump(p, "\n");
+ 
+ 	if (link_cache)
+@@ -445,6 +453,53 @@ uint32_t nfnl_log_msg_get_seq_global(con
+ 	return msg->log_msg_seq_global;
+ }
+ 
++void nfnl_log_msg_set_vlan_proto(struct nfnl_log_msg *msg, uint16_t vlan_proto)
++{
++	msg->log_msg_vlan_proto = vlan_proto;
++	msg->ce_mask |= LOG_MSG_ATTR_VLAN_PROTO;
++}
++
++int nfnl_log_msg_test_vlan_proto(const struct nfnl_log_msg *msg)
++{
++	return !!(msg->ce_mask & LOG_MSG_ATTR_VLAN_PROTO);
++}
++
++uint16_t nfnl_log_msg_get_vlan_proto(const struct nfnl_log_msg *msg)
++{
++	return msg->log_msg_vlan_proto;
++}
++
++void nfnl_log_msg_set_vlan_tag(struct nfnl_log_msg *msg, uint16_t vlan_tag)
++{
++	msg->log_msg_vlan_tag = vlan_tag;
++	msg->ce_mask |= LOG_MSG_ATTR_VLAN_TAG;
++}
++
++int nfnl_log_msg_test_vlan_tag(const struct nfnl_log_msg *msg)
++{
++	return !!(msg->ce_mask & LOG_MSG_ATTR_VLAN_TAG);
++}
++
++uint16_t nfnl_log_msg_get_vlan_tag(const struct nfnl_log_msg *msg)
++{
++	return msg->log_msg_vlan_tag;
++}
++
++uint16_t nfnl_log_msg_get_vlan_id(const struct nfnl_log_msg *msg)
++{
++	return msg->log_msg_vlan_tag & 0x0fff;
++}
++
++uint16_t nfnl_log_msg_get_vlan_cfi(const struct nfnl_log_msg *msg)
++{
++	return !!(msg->log_msg_vlan_tag & 0x1000);
++}
++
++uint16_t nfnl_log_msg_get_vlan_prio(const struct nfnl_log_msg *msg)
++{
++	return (msg->log_msg_vlan_tag & 0xe000 ) >> 13;
++}
++
+ /** @} */
+ 
+ struct nl_object_ops log_msg_obj_ops = {

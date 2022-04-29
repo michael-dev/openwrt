@@ -1,0 +1,47 @@
+--- a/net/netfilter/nf_log_common.c
++++ b/net/netfilter/nf_log_common.c
+@@ -18,6 +18,8 @@
+ #include <linux/netfilter/xt_LOG.h>
+ #include <net/netfilter/nf_log.h>
+ 
++#include <linux/if_bridge.h>
++
+ int nf_log_dump_udp_header(struct nf_log_buf *m, const struct sk_buff *skb,
+ 			   u8 proto, int fragment, unsigned int offset)
+ {
+@@ -162,11 +164,33 @@ nf_log_dump_packet_common(struct nf_log_
+ 	       out ? out->name : "");
+ #if IS_ENABLED(CONFIG_BRIDGE_NETFILTER)
+ 	physindev = nf_bridge_get_physindev(skb);
+-	if (physindev && in != physindev)
++	if (physindev)
+ 		nf_log_buf_add(m, "PHYSIN=%s ", physindev->name);
++	if (in && netif_is_bridge_port(in)) {
++		u16 p_pvid = 0;
++		struct net_device *br = netdev_master_upper_dev_get_rcu(in);
++		nf_log_buf_add(m, "[BRPORT] ");
++		if (br)
++			nf_log_buf_add(m, "IBRNAME=%s ", br->name);
++		if (br && br_vlan_enabled(br)) {
++			WARN_ON(br_vlan_get_pvid_rcu(in, &p_pvid));
++			nf_log_buf_add(m, "IPVID=%d ", p_pvid);
++		}
++	}
+ 	physoutdev = nf_bridge_get_physoutdev(skb);
+-	if (physoutdev && out != physoutdev)
++	if (physoutdev)
+ 		nf_log_buf_add(m, "PHYSOUT=%s ", physoutdev->name);
++	if (out && netif_is_bridge_port(out)) {
++		u16 p_pvid = 0;
++		struct net_device *br = netdev_master_upper_dev_get_rcu(out);
++		nf_log_buf_add(m, "[BRPORT] ");
++		if (br)
++			nf_log_buf_add(m, "OBRNAME=%s ", br->name);
++		if (br && br_vlan_enabled(br)) {
++			WARN_ON(br_vlan_get_pvid_rcu(out, &p_pvid));
++			nf_log_buf_add(m, "OPVID=%d ", p_pvid);
++		}
++	}
+ #endif
+ 	if (skb_vlan_tag_present(skb))
+ 		nf_log_buf_add(m, "VLAN=%d ", skb_vlan_tag_get_id(skb));

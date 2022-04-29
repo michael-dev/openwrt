@@ -1,0 +1,21 @@
+--- ebtables-v2.0.10-4/useful_functions.c.orig	2016-07-21 15:41:09.395439234 +0200
++++ ebtables-v2.0.10-4/useful_functions.c	2016-07-21 15:40:46.511092016 +0200
+@@ -22,6 +22,8 @@
+  * along with this program; if not, write to the Free Software
+  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+  */
++
++#include <linux/libc-compat.h>
+ #include "include/ebtables_u.h"
+ #include "include/ethernetdb.h"
+ #include <stdio.h>
+--- ebtables-v2.0.10-4/useful_functions.c.orig	2016-07-21 15:48:28.458090563 +0200
++++ ebtables-v2.0.10-4/useful_functions.c	2016-07-21 15:48:45.146342996 +0200
+@@ -23,6 +23,7 @@
+  * Foundation, Inc., 675 Mass Ave, Cambridge, MA 02139, USA.
+  */
+ 
++#include "netinet/in.h"
+ #include <linux/libc-compat.h>
+ #include "include/ebtables_u.h"
+ #include "include/ethernetdb.h"

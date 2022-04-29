@@ -1,0 +1,11 @@
+--- a/drivers/net/wireless/ath/regd.c
++++ b/drivers/net/wireless/ath/regd.c
+@@ -733,7 +733,7 @@ static int __ath_regd_init(struct ath_re
+ 	    regdmn == CTRY_DEFAULT) {
+ 		printk(KERN_DEBUG "ath: EEPROM indicates default "
+ 		       "country code should be used\n");
+-		reg->country_code = CTRY_UNITED_STATES;
++		reg->country_code = CTRY_GERMANY;
+ 	}
+ 
+ 	if (reg->country_code == CTRY_DEFAULT) {

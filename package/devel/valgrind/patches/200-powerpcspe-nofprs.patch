@@ -1,0 +1,73 @@
+Description: Enable build on powerpcspe
+ powerpcspe doesn't have floating point registers - so they can't be saved or
+ restored.
+Author: Roland Stigge <stigge@antcom.de>
+
+Index: valgrind-3.8.1/coregrind/m_dispatch/dispatch-ppc32-linux.S
+===================================================================
+--- valgrind-3.8.1.orig/coregrind/m_dispatch/dispatch-ppc32-linux.S	2013-03-20 09:35:16.000000000 +0100
++++ valgrind-3.8.1/coregrind/m_dispatch/dispatch-ppc32-linux.S	2013-03-20 09:54:18.304868776 +0100
+@@ -83,6 +83,7 @@
+         cmplwi  6,0
+         beq     LafterFP1
+ 
++#ifndef __NO_FPRS__
+         /* Floating-point reg save area : 144 bytes */
+         stfd    31,488(1)
+         stfd    30,480(1)
+@@ -102,6 +103,7 @@
+         stfd    16,368(1)
+         stfd    15,360(1)
+         stfd    14,352(1)
++#endif
+ LafterFP1:
+ 
+         /* General reg save area : 76 bytes */
+@@ -200,6 +202,7 @@
+         cmplwi  6,0
+         beq     LafterFP2
+ 
++#ifndef __NO_FPRS__
+         /* get zero into f3 (tedious) */
+         /* note: fsub 3,3,3 is not a reliable way to do this, 
+            since if f3 holds a NaN or similar then we don't necessarily
+@@ -208,6 +211,7 @@
+         stw     6,20(1)
+         lfs     3,20(1)
+         mtfsf   0xFF,3   /* fpscr = f3 */
++#endif
+ LafterFP2:
+ 
+         /* set host AltiVec control word to the default mode expected 
+@@ -263,6 +267,7 @@
+         cmplwi  10,0    /* Do we have FP ? */
+         beq     LafterFP8
+ 
++#ifndef __NO_FPRS__
+ 	/* Set fpscr back to a known state, since vex-generated code
+ 	   may have messed with fpscr[rm]. */
+         li      5,0
+@@ -271,6 +276,7 @@
+         lfs     3,0(1)
+         addi    1,1,16
+         mtfsf   0xFF,3   /* fpscr = f3 */
++#endif
+ LafterFP8:
+ 
+         cmplwi  11,0    /* Do we have altivec? */
+@@ -305,6 +311,7 @@
+         cmplwi  10,0
+         beq     LafterFP9
+ 
++#ifndef __NO_FPRS__
+         /* Floating-point regs */
+         lfd     31,488(1)
+         lfd     30,480(1)
+@@ -324,6 +331,7 @@
+         lfd     16,368(1)
+         lfd     15,360(1)
+         lfd     14,352(1)
++#endif
+ LafterFP9:
+ 
+         /* r11 already holds VG_(machine_ppc32_has_VMX) value */

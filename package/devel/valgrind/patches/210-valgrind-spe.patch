@@ -1,0 +1,900 @@
+>From a974b44c922ffdb96bc63fa74ead4f20995d0c9f Mon Sep 17 00:00:00 2001
+From: jack zhang <jack.zhang@enea.com>
+Date: Thu, 27 Sep 2012 10:11:48 +0200
+Subject: [PATCH] add e500v2 spe commands support
+
+I got a patch from John Mehaffey, which is for valgrind3.5.0 as following
+http://sourceforge.net/mailarchive/message.php?msg_id=25842534
+then I ported it to valgrind 3.7.0 and added some more codes of my own.
+
+Signed-off-by: jack zhang <jack.zhang@enea.com>
+---
+ VEX/priv/guest_ppc_helpers.c |   33 ++++
+ VEX/priv/guest_ppc_toIR.c    |  377 +++++++++++++++++++++++++++++++++++++++++-
+ VEX/priv/host_ppc_defs.c     |   44 +++++
+ VEX/priv/host_ppc_defs.h     |   10 +
+ VEX/priv/host_ppc_isel.c     |   33 ++++
+ VEX/priv/ir_defs.c           |    8 +-
+ VEX/priv/main_main.c         |    8 +-
+ VEX/pub/libvex.h             |   12 +-
+ VEX/pub/libvex_guest_ppc32.h |   35 ++++
+ VEX/pub/libvex_ir.h          |    1 +
+ coregrind/m_machine.c        |   13 ++-
+ memcheck/mc_translate.c      |    5 +-
+ 12 files changed, 563 insertions(+), 16 deletions(-)
+
+Index: valgrind-3.8.1/VEX/priv/guest_ppc_helpers.c
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/guest_ppc_helpers.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/guest_ppc_helpers.c	2013-03-20 11:35:29.874376865 +0100
+@@ -390,6 +390,40 @@
+    vex_state->guest_GPR30 = 0;
+    vex_state->guest_GPR31 = 0;
+ 
++   vex_state->guest_GPR0_ext  = 0;
++   vex_state->guest_GPR1_ext  = 0;
++   vex_state->guest_GPR2_ext  = 0;
++   vex_state->guest_GPR3_ext  = 0;
++   vex_state->guest_GPR4_ext  = 0;
++   vex_state->guest_GPR5_ext  = 0;
++   vex_state->guest_GPR6_ext  = 0;
++   vex_state->guest_GPR7_ext  = 0;
++   vex_state->guest_GPR8_ext  = 0;
++   vex_state->guest_GPR9_ext  = 0;
++   vex_state->guest_GPR10_ext = 0;
++   vex_state->guest_GPR11_ext = 0;
++   vex_state->guest_GPR12_ext = 0;
++   vex_state->guest_GPR13_ext = 0;
++   vex_state->guest_GPR14_ext = 0;
++   vex_state->guest_GPR15_ext = 0;
++   vex_state->guest_GPR16_ext = 0;
++   vex_state->guest_GPR17_ext = 0;
++   vex_state->guest_GPR18_ext = 0;
++   vex_state->guest_GPR19_ext = 0;
++   vex_state->guest_GPR20_ext = 0;
++   vex_state->guest_GPR21_ext = 0;
++   vex_state->guest_GPR22_ext = 0;
++   vex_state->guest_GPR23_ext = 0;
++   vex_state->guest_GPR24_ext = 0;
++   vex_state->guest_GPR25_ext = 0;
++   vex_state->guest_GPR26_ext = 0;
++   vex_state->guest_GPR27_ext = 0;
++   vex_state->guest_GPR28_ext = 0;
++   vex_state->guest_GPR29_ext = 0;
++   vex_state->guest_GPR30_ext = 0;
++   vex_state->guest_GPR31_ext = 0;
++
++
+    /* Initialise the vector state. */
+ #  define VECZERO(_vr) _vr[0]=_vr[1]=_vr[2]=_vr[3] = 0;
+ 
+Index: valgrind-3.8.1/VEX/priv/guest_ppc_toIR.c
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/guest_ppc_toIR.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/guest_ppc_toIR.c	2013-03-20 11:33:22.606345237 +0100
+@@ -337,6 +337,11 @@
+    return toUChar( instr & 0x1 );
+ }
+ 
++/* Extract unsigned offset, instr[15:11] */
++static UChar ifieldUIMM5 ( UInt instr ) {
++   return toUChar( IFIELD( instr, 11, 5) );
++}
++
+ /* Extract unsigned bottom half, instr[15:0] */
+ static UInt ifieldUIMM16 ( UInt instr ) {
+    return instr & 0xFFFF;
+@@ -545,6 +550,11 @@
+    return IRExpr_RdTmp(tmp);
+ }
+ 
++static IRExpr* mkU1 ( UChar i )
++{
++   return IRExpr_Const(IRConst_U1(i));
++}
++
+ static IRExpr* mkU8 ( UChar i )
+ {
+    return IRExpr_Const(IRConst_U8(i));
+@@ -1052,7 +1062,6 @@
+    return IRExpr_Get( integerGuestRegOffset(archreg), ty );
+ }
+ 
+-/* Ditto, but write to a reg instead. */
+ static void putIReg ( UInt archreg, IRExpr* e )
+ {
+    IRType ty = mode64 ? Ity_I64 : Ity_I32;
+@@ -1061,6 +1070,82 @@
+    stmt( IRStmt_Put(integerGuestRegOffset(archreg), e) );
+ }
+ 
++/* Get GPRnn as Single Prec. FP (SPE) */
++static IRExpr* getSPReg ( UInt archreg )
++{
++   vassert(archreg < 32);
++   return IRExpr_Get( integerGuestRegOffset(archreg), Ity_F32 );
++}
++
++/* Ditto, but write to a reg instead. */
++static void putSPReg ( UInt archreg, IRExpr* e )
++{
++   vassert(archreg < 32);
++   vassert(typeOfIRExpr(irsb->tyenv, e) == Ity_F32 );
++   stmt( IRStmt_Put(integerGuestRegOffset(archreg), e) );
++}
++
++
++static Int extGuestRegOffset ( UInt archreg )
++{
++   vassert(archreg < 32);
++
++   vassert(host_is_bigendian);
++
++#define offsetofPPC32GuestState(_x) offsetof(VexGuestPPC32State, _x)
++
++   switch (archreg) {
++   case  0: return offsetofPPC32GuestState(guest_GPR0_ext);
++   case  1: return offsetofPPC32GuestState(guest_GPR1_ext);
++   case  2: return offsetofPPC32GuestState(guest_GPR2_ext);
++   case  3: return offsetofPPC32GuestState(guest_GPR3_ext);
++   case  4: return offsetofPPC32GuestState(guest_GPR4_ext);
++   case  5: return offsetofPPC32GuestState(guest_GPR5_ext);
++   case  6: return offsetofPPC32GuestState(guest_GPR6_ext);
++   case  7: return offsetofPPC32GuestState(guest_GPR7_ext);
++   case  8: return offsetofPPC32GuestState(guest_GPR8_ext);
++   case  9: return offsetofPPC32GuestState(guest_GPR9_ext);
++   case 10: return offsetofPPC32GuestState(guest_GPR10_ext);
++   case 11: return offsetofPPC32GuestState(guest_GPR11_ext);
++   case 12: return offsetofPPC32GuestState(guest_GPR12_ext);
++   case 13: return offsetofPPC32GuestState(guest_GPR13_ext);
++   case 14: return offsetofPPC32GuestState(guest_GPR14_ext);
++   case 15: return offsetofPPC32GuestState(guest_GPR15_ext);
++   case 16: return offsetofPPC32GuestState(guest_GPR16_ext);
++   case 17: return offsetofPPC32GuestState(guest_GPR17_ext);
++   case 18: return offsetofPPC32GuestState(guest_GPR18_ext);
++   case 19: return offsetofPPC32GuestState(guest_GPR19_ext);
++   case 20: return offsetofPPC32GuestState(guest_GPR20_ext);
++   case 21: return offsetofPPC32GuestState(guest_GPR21_ext);
++   case 22: return offsetofPPC32GuestState(guest_GPR22_ext);
++   case 23: return offsetofPPC32GuestState(guest_GPR23_ext);
++   case 24: return offsetofPPC32GuestState(guest_GPR24_ext);
++   case 25: return offsetofPPC32GuestState(guest_GPR25_ext);
++   case 26: return offsetofPPC32GuestState(guest_GPR26_ext);
++   case 27: return offsetofPPC32GuestState(guest_GPR27_ext);
++   case 28: return offsetofPPC32GuestState(guest_GPR28_ext);
++   case 29: return offsetofPPC32GuestState(guest_GPR29_ext);
++   case 30: return offsetofPPC32GuestState(guest_GPR30_ext);
++   case 31: return offsetofPPC32GuestState(guest_GPR31_ext);
++   default: break;
++   }
++   vpanic("extGuestRegOffset(ppc,be)"); /*notreached*/
++}
++
++/* load from an extended reg (SPE) */
++static IRExpr* getExtIReg ( UInt archreg )
++{
++   vassert(archreg < 32);
++   return IRExpr_Get( extGuestRegOffset(archreg), Ity_I32 );
++}
++
++/* Write to an extended reg (SPE) */
++static void putExtIReg ( UInt archreg, IRExpr* e )
++{
++   vassert(archreg < 32);
++   vassert(typeOfIRExpr(irsb->tyenv, e) == Ity_I32 );
++   stmt( IRStmt_Put(extGuestRegOffset(archreg), e) );
++}
+ 
+ /* Floating point egisters are mapped to VSX registers[0..31]. */
+ static Int floatGuestRegOffset ( UInt archreg )
+@@ -1491,6 +1576,17 @@
+    }
+ }
+ 
++/* Standard effective address calc: (rA|0) + uimm5*mult */
++static IRExpr* ea_rAor0_uimm5 ( UInt rA, UChar uimm5, UChar mult )
++{
++   UInt offset = uimm5 * mult;
++   vassert(rA < 32);
++   if (rA == 0) {
++      return mkU16(offset);
++   } else {
++      return ea_rA_simm( rA, offset ); // take advantage that s=0
++   }
++}
+ 
+ /* Align effective address */
+ static IRExpr* addr_align( IRExpr* addr, UChar align )
+@@ -5840,11 +5936,15 @@
+    case 0x1F:
+       switch (opc2) {
+       case 0x356: // eieio (Enforce In-Order Exec of I/O, PPC32 p394)
+-         if (b11to25 != 0 || b0 != 0) {
+-            vex_printf("dis_memsync(ppc)(eiei0,b11to25|b0)\n");
+-            return False;
++         if (b11to25 == 0 && b0 == 0) {
++             DIP("eieio\n");
++         }else if (b11to25 == 0x400 && b0 == 0) {
++             DIP("mbar(MO=1)\n");
++         }else{
++             vex_printf("dis_memsync(ppc)(eiei0,b11to25|b0)[%x!=0,%x!=0]\n",
++                        b11to25, b0);
++             return False;
+          }
+-         DIP("eieio\n");
+          /* Insert a memory fence, just to be on the safe side. */
+          stmt( IRStmt_MBE(Imbe_Fence) );
+          break;
+@@ -16244,6 +16344,217 @@
+    return True;
+ }
+ 
++static Bool dis_sp_load ( UInt theInstr )
++{
++   UChar opc1     = ifieldOPC(theInstr);
++   UChar rD_addr  = ifieldRegDS(theInstr);
++   UChar rA_addr  = ifieldRegA(theInstr);
++   UChar rB_addr  = ifieldRegB(theInstr);
++   UInt  opc2     = IFIELD( theInstr, 0, 11 );
++   UChar uimm5    = ifieldUIMM5(theInstr);
++   UChar b0       = ifieldBIT0(theInstr);
++
++   IRType  ty     = mode64 ? Ity_I64 : Ity_I32;
++   IRTemp  EA     = newTemp(ty);
++
++   if (b0) // offset
++      assign( EA, ea_rAor0_uimm5( rA_addr, uimm5, 8 ) );  // need a better way for ev*splat
++   else  // indexed
++      assign( EA, ea_rAor0_idxd( rA_addr, rB_addr ) );
++
++   vassert (opc1==0x04);
++
++   switch (opc2) {  // only handles load Dword insns for now.
++   case 0x300: // evlddx (Vector Load DWord into DWord, Indexed, SPEPEM 5-113)
++      DIP("evlddx r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      break;
++   case 0x301: // evldd (Vector Load DWord into Dword, SPEPEM 5-112)
++      DIP("evldd r%u,%d(r%u)\n", rD_addr, uimm5*8, rA_addr);
++      break;
++   case 0x302: // evldwx (Vector Load DWord into two words, Indexed, SPEPEM 5-115)
++      DIP("evldwx r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      break;
++   case 0x303: // evldw (Vector Load DWord into two words, SPEPEM 5-114)
++      DIP("evldw r%u,%d(r%u)\n", rD_addr, uimm5*8, rA_addr);
++      break;
++   case 0x304: // evldhx (Vector Load DWord into four half-words, Indexed, SPEPEM 5-117)
++      DIP("evldhx r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      break;
++   case 0x305: // evldh (Vector Load DWord into four half-words, SPEPEM 5-116)
++      DIP("evldh r%u,%d(r%u)\n", rD_addr, uimm5*8, rA_addr);
++      break;
++   default:
++      vex_printf("dis_sp_load(ppc)(opc2)\n");
++      return False;
++   }
++// for BigEndian, all evld* boil down to the same thing.
++   putExtIReg( rD_addr, loadBE(Ity_I32, mkexpr(EA)) );
++   putIReg( rD_addr, loadBE( Ity_I32, binop(Iop_Add32, mkexpr(EA), mkU32(4)) ) );
++   return True;
++}
++
++static Bool dis_sp_store ( UInt theInstr )
++{
++   UChar opc1     = ifieldOPC(theInstr);
++   UChar rS_addr  = ifieldRegDS(theInstr);
++   UChar rA_addr  = ifieldRegA(theInstr);
++   UChar rB_addr  = ifieldRegB(theInstr);
++   UInt  opc2     = IFIELD( theInstr, 0, 11 );
++   UChar uimm5    = ifieldUIMM5(theInstr);
++   UChar b0       = ifieldBIT0(theInstr);
++
++   IRType  ty     = mode64 ? Ity_I64 : Ity_I32;
++   IRTemp  EA     = newTemp(ty);
++   IRTemp  rS0    = newTemp(Ity_I32);
++   IRTemp  rS1    = newTemp(Ity_I32);
++
++   assign( rS0, getIReg(rS_addr) );
++   assign( rS1, getExtIReg(rS_addr) );
++
++   if (b0) // offset
++      assign( EA, ea_rAor0_uimm5( rA_addr, uimm5, 8 ) );  // need a better way for ev*splat
++   else  // indexed
++      assign( EA, ea_rAor0_idxd( rA_addr, rB_addr ) );
++
++   vassert (opc1==0x04);
++
++   switch (opc2) {  // only handles store Double insns for now.
++   case 0x320: // evstddx (Vector Store Double of Double, Indexed, SPEPEM 5-229)
++      DIP("evstddx r%u,r%u,r%u\n", rS_addr, rA_addr, rB_addr);
++      break;
++   case 0x321: // evstdd (Vector Store Double of Double, SPEPEM 5-228)
++      DIP("evstdd r%u,%d(r%u)\n", rS_addr, uimm5*8, rA_addr);
++      break;
++   case 0x322: // evstwdx (Vector Store Double of Two Words, Indexed, SPEPEM 5-233)
++      DIP("evstdwx r%u,r%u,r%u\n", rS_addr, rA_addr, rB_addr);
++      break;
++   case 0x323: // evstdw (Vector Store Double of Two Words, SPEPEM 5-232)
++      DIP("evstdw r%u,%d(r%u)\n", rS_addr, uimm5*8, rA_addr);
++      break;
++   case 0x324: // evstdhx (Vector Store Double of four halfwords, Indexed, SPEPEM 5-231)
++      DIP("evstdhx r%u,r%u,r%u\n", rS_addr, rA_addr, rB_addr);
++      break;
++   case 0x325: // evstdh (Vector Store Double of four halfwords, SPEPEM 5-230)
++      DIP("evstdh r%u,%d(r%u)\n", rS_addr, uimm5*8, rA_addr);
++      break;
++   default:
++      vex_printf("dis_sp_store(ppc)(opc2)\n");
++      return False;
++   }
++// for BigEndian, all evst* boil down to the same thing.
++   storeBE( mkexpr(EA), mkexpr(rS1) );
++   storeBE( binop(Iop_Add32, mkexpr(EA), mkU32(4)), mkexpr(rS0) );
++   return True;
++}
++
++static Bool dis_sp_fp ( UInt theInstr )
++{
++   UChar opc1     = ifieldOPC(theInstr);
++   UChar rD_addr  = ifieldRegDS(theInstr);
++   UChar rA_addr  = ifieldRegA(theInstr);
++   UChar rB_addr  = ifieldRegB(theInstr);
++   UInt  opc2     = IFIELD( theInstr, 0, 11 );
++
++   IRTemp  frA   = newTemp(Ity_F64);
++   IRTemp  frB   = newTemp(Ity_F64);
++   IRTemp  frD   = newTemp(Ity_F64);
++   IRExpr* rm    = get_IR_roundingmode();
++
++   vassert (opc1==0x04);
++
++   assign( frA, unop(Iop_F32toF64, getSPReg(rA_addr)));
++   assign( frB, unop(Iop_F32toF64, getSPReg(rB_addr)));
++
++   switch (opc2) {  // only handles efs* for now.
++   case 0x2C0: // efsadd (Floating-Point Add, SPEPEM 5-46)
++      DIP("efsadd r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      assign( frD, triop( Iop_AddF64r32,
++                             rm, mkexpr(frA), mkexpr(frB) ));
++      break;
++   case 0x2C9: // efsdiv (Floating-Point Divide, SPEPEM 5-60)
++      DIP("efsdiv r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      assign( frD, triop( Iop_DivF64r32,
++                             rm, mkexpr(frA), mkexpr(frB) ));
++      break;
++   case 0x2C8: // efsmul (Floating-Point Multiply, SPEPEM 5-61)
++      DIP("efsmul r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      assign( frD, triop( Iop_MulF64r32,
++                             rm, mkexpr(frA), mkexpr(frB) ));
++      break;
++   case 0x2C1: // efssub (Floating-Point Subtract, SPEPEM 5-64)
++      DIP("efssub r%u,r%u,r%u\n", rD_addr, rA_addr, rB_addr);
++      assign( frD, triop( Iop_SubF64r32,
++                             rm, mkexpr(frA), mkexpr(frB) ));
++      break;
++   default:
++      vex_printf("dis_sp_fp(ppc)(opc2)\n");
++      return False;
++   }
++   putSPReg(rD_addr, unop(Iop_TruncF64asF32, mkexpr(frD)) );
++   return True;
++}
++
++/* SPE conversion instructions */
++static Bool dis_sp_cvt ( UInt theInstr )
++{
++   UChar opc1     = ifieldOPC(theInstr);
++   UChar rD_addr  = ifieldRegDS(theInstr);
++   UChar rB_addr  = ifieldRegB(theInstr);
++   UInt  opc2     = IFIELD( theInstr, 0, 11 );
++
++   IRTemp  rD    = newTemp(Ity_I32);
++   IRTemp  rB    = newTemp(Ity_F32);
++   IRExpr* rm    = get_IR_roundingmode();
++   IRTemp  frac  = newTemp(Ity_I1);
++   IRTemp  syned = newTemp(Ity_I1);
++   IRTemp  rmz   = newTemp(Ity_I32);
++
++   vassert (opc1==0x04);
++
++   assign( rB,  getSPReg(rB_addr));
++   assign( rmz, mkU32(Irrm_ZERO));     // force rounding mode "to zero" ?
++
++   switch (opc2) {
++   case 0x2D7: // efsctsf (Convert Floating-Point to Signed Fraction, SPEPEM 5-54)
++      DIP("efsctsf r%u,r%u\n", rD_addr, rB_addr);
++      assign( frac, mkU1(True));       // convert to fraction
++      assign( syned, mkU1(False));     // Signed result
++      break;
++   case 0x2D5: // efsctsi (Convert Floating-Point to Signed Integer, SPEPEM 5-55)
++      DIP("efsctsi r%u,r%u\n", rD_addr, rB_addr);
++      assign( frac, mkU1(False));      // convert to fraction
++      assign( syned, mkU1(False));     // Signed result
++      break;
++   case 0x2DA: // efsctsiz (Convert Floating-Point to Signed Integer with Round toward Zero, SPEPEM 5-56)
++      DIP("efsctsiz r%u,r%u\n", rD_addr, rB_addr);
++      assign( frac, mkU1(False));      // convert to fraction
++      assign( syned, mkU1(False));     // Signed result
++      rm = mkexpr(rmz);                        // force round to zero
++      break;
++   case 0x2D6: // efsctuf (Convert Floating-Point to Unsigned Fraction, SPEPEM 5-57)
++      DIP("efsctuf r%u,r%u\n", rD_addr, rB_addr);
++      assign( frac, mkU1(True));       // convert to fraction
++      assign( syned, mkU1(True));      // Unsigned result
++      break;
++   case 0x2D4: // efsctui (Convert Floating-Point to Unsigned Integer, SPEPEM 5-58)
++      DIP("efsctui r%u,r%u\n", rD_addr, rB_addr);
++      assign( frac, mkU1(True));       // convert to fraction
++      assign( syned, mkU1(True));      // Unsigned result
++      break;
++   case 0x2D8: // efsctuiz (Convert Floating-Point to Unsigned Integer with Round toward Zero, SPEPEM 5-59)
++      DIP("efsctuiz r%u,r%u\n", rD_addr, rB_addr);
++      assign( frac, mkU1(True));       // convert to fraction
++      assign( syned, mkU1(True));      // Unsigned result
++      rm = mkexpr(rmz);                        // force round to zero
++      break;
++   default:
++      vex_printf("dis_sp_cvt(ppc)(opc2)\n");
++      return False;
++   }
++   assign (rD, qop( Iop_F32toI32S, mkexpr(rB), rm, mkexpr(frac), mkexpr(syned)));
++   putIReg(rD_addr, mkexpr(rD));
++   return True;
++}
+ 
+ /* The 0x3C primary opcode (VSX category) uses several different forms of
+  * extended opcodes:
+@@ -16487,6 +16798,7 @@
+    Bool      allow_V  = False;
+    Bool      allow_FX = False;
+    Bool      allow_GX = False;
++   Bool      allow_SP = False;
+    Bool      allow_VX = False;  // Equates to "supports Power ISA 2.06
+    Bool      allow_DFP = False;
+    UInt      hwcaps = archinfo->hwcaps;
+@@ -16505,6 +16817,7 @@
+       allow_V  = (0 != (hwcaps & VEX_HWCAPS_PPC32_V));
+       allow_FX = (0 != (hwcaps & VEX_HWCAPS_PPC32_FX));
+       allow_GX = (0 != (hwcaps & VEX_HWCAPS_PPC32_GX));
++      allow_SP = (0 != (hwcaps & VEX_HWCAPS_PPC32_SP));
+       allow_VX = (0 != (hwcaps & VEX_HWCAPS_PPC32_VX));
+       allow_DFP = (0 != (hwcaps & VEX_HWCAPS_PPC32_DFP));
+    }
+@@ -17485,7 +17798,59 @@
+ 
+ 
+    case 0x04:
+-      /* AltiVec instructions */
++      /* AltiVec or SPE instructions */
++
++      if (allow_SP) {   // Altivec and SPE are mutually exclusive, as
++                       //  the instruction opcodes overlap
++         opc2 = IFIELD(theInstr, 0, 11);
++        switch (opc2) {
++         /* SPE Load */
++         case 0x300: case 0x301:       // evlddx, evldd
++         case 0x302: case 0x303:       // evldwx, evldw
++         case 0x304: case 0x305:       // evldhx, evldh
++         case 0x308: case 0x309:       // evlhhesplatx, evlhhesplat
++         case 0x30D: case 0x30C:       // evlhhousplatx, evlhhousplat
++         case 0x30E: case 0x30F:       // evlhhossplatx, evlhhossplat
++         case 0x310: case 0x311:       // evlwhex, evlwhe
++         case 0x314: case 0x315:       // evlwhoux, evlwhou
++         case 0x316: case 0x317:       // evlwhosx, evlwhos
++         case 0x318: case 0x319:       // evlwwsplatx, evlwwsplat
++         case 0x31C: case 0x31D:       // evlwhsplatx, evlwhsplat
++            if (dis_sp_load( theInstr )) goto decode_success;
++            goto decode_failure;
++
++      /* SPE Store */
++         case 0x320: case 0x321:       // evstddx, evstdd
++         case 0x322: case 0x323:       // evstdwx, evstdw
++         case 0x324: case 0x325:       // evstdhx, evstdh
++         case 0x330: case 0x331:       // evstwhex, evstwhe
++         case 0x334: case 0x335:       // evstwhox, evstwho
++         case 0x338: case 0x339:       // evstwwex, evstwwe
++         case 0x33C: case 0x33D:       // evstwwox, evstwwo
++            if (dis_sp_store( theInstr )) goto decode_success;
++            goto decode_failure;
++
++      /* SPE Arith */
++        case 0x2C0: case 0x2C1:        // efsadd, efssub
++        case 0x2C8: case 0x2C9:        // efsmul, efsdiv
++            if (dis_sp_fp( theInstr )) goto decode_success;
++            goto decode_failure;
++
++      /* SPE Convert */
++        case 0x2D4: case 0x2D5:        // efsctui, efsctsi
++        case 0x2D6: case 0x2D7:        // efsctuf, efsctsf
++        case 0x2D8: case 0x2DA:        // efsctuiz, efsctsiz
++            if (dis_sp_cvt( theInstr )) goto decode_success;
++            goto decode_failure;
++        case 0x216: { DIP("0x216 need valgrind support\n"); goto decode_success; }
++         default:
++            vex_printf("disInstr(ppc): "
++                 "declined to decode a SignalProcessing-Optional insn.\n");
++            goto decode_failure;
++         }
++      }
++
++      /* else, assume Altivec insn */
+ 
+       opc2 = IFIELD(theInstr, 0, 6);
+       switch (opc2) {
+Index: valgrind-3.8.1/VEX/priv/host_ppc_defs.c
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/host_ppc_defs.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/host_ppc_defs.c	2013-03-20 11:33:22.610345238 +0100
+@@ -1253,6 +1253,16 @@
+    i->Pin.FpCftI.src   = src;
+    return i;
+ }
++PPCInstr* PPCInstr_FpCstI ( Bool frac, Bool syned,
++                            HReg dst, HReg src ) {
++   PPCInstr* i         = LibVEX_Alloc(sizeof(PPCInstr));
++   i->tag              = Pin_FpCstI;
++   i->Pin.FpCstI.frac  = frac;
++   i->Pin.FpCstI.syned = syned;
++   i->Pin.FpCstI.dst   = dst;
++   i->Pin.FpCstI.src   = src;
++   return i;
++}
+ PPCInstr* PPCInstr_FpCMov ( PPCCondCode cond, HReg dst, HReg src ) {
+    PPCInstr* i        = LibVEX_Alloc(sizeof(PPCInstr));
+    i->tag             = Pin_FpCMov;
+@@ -1776,6 +1786,19 @@
+       ppHRegPPC(i->Pin.FpCftI.src);
+       return;
+    }
++   case Pin_FpCstI: {
++      HChar* str_f = "i";
++      HChar* str_s = "u";
++      if (i->Pin.FpCstI.frac)
++         str_f = "f";
++      if (i->Pin.FpCstI.syned)
++         str_s = "s";
++      vex_printf("efsct%s%s ", str_s, str_f);
++      ppHRegPPC(i->Pin.FpCstI.dst);
++      vex_printf(",");
++      ppHRegPPC(i->Pin.FpCstI.src);
++      return;
++   }
+    case Pin_FpCMov:
+       vex_printf("fpcmov (%s) ", showPPCCondCode(i->Pin.FpCMov.cond));
+       ppHRegPPC(i->Pin.FpCMov.dst);
+@@ -2303,6 +2326,10 @@
+       addHRegUse(u, HRmWrite, i->Pin.FpCftI.dst);
+       addHRegUse(u, HRmRead,  i->Pin.FpCftI.src);
+       return;
++   case Pin_FpCstI:
++      addHRegUse(u, HRmWrite, i->Pin.FpCstI.dst);
++      addHRegUse(u, HRmRead,  i->Pin.FpCstI.src);
++      return;
+    case Pin_FpCMov:
+       addHRegUse(u, HRmModify, i->Pin.FpCMov.dst);
+       addHRegUse(u, HRmRead,   i->Pin.FpCMov.src);
+@@ -2622,6 +2649,9 @@
+    case Pin_FpCftI:
+       mapReg(m, &i->Pin.FpCftI.dst);
+       mapReg(m, &i->Pin.FpCftI.src);
++   case Pin_FpCstI:
++      mapReg(m, &i->Pin.FpCstI.dst);
++      mapReg(m, &i->Pin.FpCstI.src);
+       return;
+    case Pin_FpCMov:
+       mapReg(m, &i->Pin.FpCMov.dst);
+@@ -4489,6 +4519,20 @@
+       goto bad;
+    }
+ 
++   case Pin_FpCstI: {
++      UInt opc2 = 0x16A;
++      UInt opc3 = 0;
++      UInt ir_dst = iregNo(i->Pin.FpCstI.dst, Ity_I32);
++      UInt ir_src = iregNo(i->Pin.FpCstI.src, Ity_I32);
++      if (i->Pin.FpCstI.frac)
++         opc2++;
++      if (i->Pin.FpCstI.syned)
++         opc3++;
++
++      p = mkFormX(p, 0x04, ir_dst, 0, ir_src, opc2, opc3);
++      goto done;
++   }
++
+    case Pin_FpCMov: {
+       UInt        fr_dst = fregNo(i->Pin.FpCMov.dst);
+       UInt        fr_src = fregNo(i->Pin.FpCMov.src);
+Index: valgrind-3.8.1/VEX/priv/host_ppc_defs.h
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/host_ppc_defs.h	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/host_ppc_defs.h	2013-03-20 11:33:22.614345239 +0100
+@@ -475,6 +475,7 @@
+       Pin_FpSTFIW,    /* stfiwx */
+       Pin_FpRSP,      /* FP round IEEE754 double to IEEE754 single */
+       Pin_FpCftI,     /* fcfid[u,s,us]/fctid[u]/fctiw[u] */
++      Pin_FpCstI,     /* evfsct[sf, si, siz, uf, ui, uiz] */
+       Pin_FpCMov,     /* FP floating point conditional move */
+       Pin_FpLdFPSCR,  /* mtfsf */
+       Pin_FpCmp,      /* FP compare, generating value into int reg */
+@@ -729,6 +730,13 @@
+             HReg src;
+             HReg dst;
+          } FpCftI;
++         /* evfsct[sf, si, siz, uf, ui, uiz] */
++         struct {
++            Bool frac; /* False==Integer, True==fraction */
++            Bool syned; /* True==signed conversion, False==unsigned */
++            HReg src;
++            HReg dst;
++         } FpCstI;
+          /* FP mov src to dst on the given condition. */
+          struct {
+             PPCCondCode cond;
+@@ -996,6 +1004,8 @@
+ extern PPCInstr* PPCInstr_FpRSP      ( HReg dst, HReg src );
+ extern PPCInstr* PPCInstr_FpCftI     ( Bool fromI, Bool int32, Bool syned,
+                                        Bool dst64, HReg dst, HReg src );
++extern PPCInstr* PPCInstr_FpCstI     ( Bool frac, Bool syned,
++                                        HReg dst, HReg src );
+ extern PPCInstr* PPCInstr_FpCMov     ( PPCCondCode, HReg dst, HReg src );
+ extern PPCInstr* PPCInstr_FpLdFPSCR  ( HReg src, Bool dfp_rm );
+ extern PPCInstr* PPCInstr_FpCmp      ( HReg dst, HReg srcL, HReg srcR );
+Index: valgrind-3.8.1/VEX/priv/host_ppc_isel.c
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/host_ppc_isel.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/host_ppc_isel.c	2013-03-20 12:08:01.186861759 +0100
+@@ -348,6 +348,13 @@
+    return reg;
+ }
+ 
++static HReg newVRegS ( ISelEnv* env )
++{
++   HReg reg = mkHReg(env->vreg_ctr, HRcFlt32, True/*virtual reg*/);
++   env->vreg_ctr++;
++   return reg;
++}
++
+ static HReg newVRegV ( ISelEnv* env )
+ {
+    HReg reg = mkHReg(env->vreg_ctr, HRcVec128, True/*virtual reg*/);
+@@ -1262,6 +1269,32 @@
+       return r_dst;
+       /*NOTREACHED*/
+    }
++   
++   /* --------- QUAD OP --------- */
++   case Iex_Qop: {
++      if (e->Iex.Qop.details->op == Iop_F32toI32S) {
++         HReg      fsrc    = iselFltExpr(env, e->Iex.Qop.details->arg1);
++         HReg      idst    = newVRegI(env);
++         IRExpr*   fr      = e->Iex.Qop.details->arg3;
++         IRExpr*   sy      = e->Iex.Qop.details->arg4;
++
++         Bool frac = fr->Iex.Const.con->Ico.U1;
++         Bool syned = sy->Iex.Const.con->Ico.U1;
++
++         vassert( fr->tag == Iex_Const );
++         vassert( fr->Iex.Const.con->tag == Ico_U1 );
++         vassert( sy->tag == Iex_Const );
++         vassert( sy->Iex.Const.con->tag == Ico_U1 );
++
++         /* Set host rounding mode */
++         set_FPU_rounding_mode( env, e->Iex.Qop.details->arg2 );
++
++         addInstr(env, PPCInstr_FpCstI(frac, syned, idst, fsrc));
++
++         return idst;
++      }
++      break;
++   }
+ 
+    /* --------- BINARY OP --------- */
+    case Iex_Binop: {
+Index: valgrind-3.8.1/VEX/priv/ir_defs.c
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/ir_defs.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/ir_defs.c	2013-03-20 11:33:22.626345242 +0100
+@@ -363,7 +363,8 @@
+       case Iop_CmpNEZ8x4:  vex_printf("CmpNEZ8x4"); return;
+ 
+       case Iop_CmpF64:    vex_printf("CmpF64"); return;
+-
++      	
++      case Iop_F32toUI32S: vex_printf("F32toUI32S"); return;
+       case Iop_F64toI16S: vex_printf("F64toI16S"); return;
+       case Iop_F64toI32S: vex_printf("F64toI32S"); return;
+       case Iop_F64toI64S: vex_printf("F64toI64S"); return;
+@@ -2404,6 +2405,9 @@
+       case Iop_CmpF64:
+          BINARY(Ity_F64,Ity_F64, Ity_I32);
+ 
++      case Iop_F32toI32S: QUATERNARY(Ity_F32, Ity_I32, Ity_I1, Ity_I1, Ity_I32);
++      case Iop_F32toUI32S: BINARY(ity_RMode, Ity_F32, Ity_I32);
++      	
+       case Iop_CmpF128:
+          BINARY(Ity_F128,Ity_F128, Ity_I32);
+ 
+@@ -2423,7 +2427,7 @@
+       case Iop_I32UtoF64: UNARY(Ity_I32, Ity_F64);
+ 
+       case Iop_F32toI16S: BINARY(ity_RMode,Ity_F32, Ity_I16);
+-      case Iop_F32toI32S: BINARY(ity_RMode,Ity_F32, Ity_I32);
++      //case Iop_F32toI32S: BINARY(ity_RMode,Ity_F32, Ity_I32);
+       case Iop_F32toI64S: BINARY(ity_RMode,Ity_F32, Ity_I64);
+ 
+       case Iop_I16StoF32: UNARY(Ity_I16, Ity_F32);
+Index: valgrind-3.8.1/VEX/priv/main_main.c
+===================================================================
+--- valgrind-3.8.1.orig/VEX/priv/main_main.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/priv/main_main.c	2013-03-20 11:33:22.654345249 +0100
+@@ -1148,11 +1148,13 @@
+ static HChar* show_hwcaps_ppc32 ( UInt hwcaps )
+ {
+    /* Monotonic with complications.  Basically V > F > baseline,
+-      but once you have F then you can have FX or GX too. */
++      but once you have F then you can have FX and/or GX and/or SPE too. */
++   /* I don't think you will find SPE with V, nor on PPC64 */
+    const UInt F  = VEX_HWCAPS_PPC32_F;
+    const UInt V  = VEX_HWCAPS_PPC32_V;
+    const UInt FX = VEX_HWCAPS_PPC32_FX;
+    const UInt GX = VEX_HWCAPS_PPC32_GX;
++   const UInt SP = VEX_HWCAPS_PPC32_SP;
+    const UInt VX = VEX_HWCAPS_PPC32_VX;
+    const UInt DFP = VEX_HWCAPS_PPC32_DFP;
+          UInt c  = hwcaps;
+@@ -1160,7 +1162,11 @@
+    if (c == F)           return "ppc32-int-flt";
+    if (c == (F|FX))      return "ppc32-int-flt-FX";
+    if (c == (F|GX))      return "ppc32-int-flt-GX";
++   if (c == (F|SP))      return "ppc32-int-flt-SPE";
+    if (c == (F|FX|GX))   return "ppc32-int-flt-FX-GX";
++   if (c == (F|FX|SP))   return "ppc32-int-flt-FX-SPE";
++   if (c == (F|GX|SP))   return "ppc32-int-flt-GX-SPE";
++   if (c == (F|FX|GX|SP))   return "ppc32-int-flt-FX-GX-SPE";
+    if (c == (F|V))       return "ppc32-int-flt-vmx";
+    if (c == (F|V|FX))    return "ppc32-int-flt-vmx-FX";
+    if (c == (F|V|GX))    return "ppc32-int-flt-vmx-GX";
+Index: valgrind-3.8.1/VEX/pub/libvex.h
+===================================================================
+--- valgrind-3.8.1.orig/VEX/pub/libvex.h	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/pub/libvex.h	2013-03-20 11:45:37.470527855 +0100
+@@ -89,16 +89,18 @@
+ #define VEX_HWCAPS_PPC32_FX    (1<<10) /* FP extns (fsqrt, fsqrts) */
+ #define VEX_HWCAPS_PPC32_GX    (1<<11) /* Graphics extns
+                                           (fres,frsqrte,fsel,stfiwx) */
+-#define VEX_HWCAPS_PPC32_VX    (1<<12) /* Vector-scalar floating-point (VSX); implies ISA 2.06 or higher  */
++#define VEX_HWCAPS_PPC32_SP   (1<<12)  /* SPE (Signal Processing extns) */
++
++#define VEX_HWCAPS_PPC32_VX    (1<<13) /* Vector-scalar floating-point (VSX); implies ISA 2.06 or higher  */
+ #define VEX_HWCAPS_PPC32_DFP   (1<<17) /* Decimal Floating Point (DFP) -- e.g., dadd */
+ 
+ /* ppc64: baseline capability is integer and basic FP insns */
+-#define VEX_HWCAPS_PPC64_V     (1<<13) /* Altivec (VMX) */
+-#define VEX_HWCAPS_PPC64_FX    (1<<14) /* FP extns (fsqrt, fsqrts) */
+-#define VEX_HWCAPS_PPC64_GX    (1<<15) /* Graphics extns
++#define VEX_HWCAPS_PPC64_V     (1<<14) /* Altivec (VMX) */
++#define VEX_HWCAPS_PPC64_FX    (1<<15) /* FP extns (fsqrt, fsqrts) */
++#define VEX_HWCAPS_PPC64_GX    (1<<16) /* Graphics extns
+                                           (fres,frsqrte,fsel,stfiwx) */
+-#define VEX_HWCAPS_PPC64_VX    (1<<16) /* Vector-scalar floating-point (VSX); implies ISA 2.06 or higher  */
+ #define VEX_HWCAPS_PPC64_DFP   (1<<18) /* Decimal Floating Point (DFP) -- e.g., dadd */
++#define VEX_HWCAPS_PPC64_VX    (1<<19) /* Vector-scalar floating-point (VSX); implies ISA 2.06 or higher  */
+ 
+ /* s390x: Hardware capability encoding
+ 
+Index: valgrind-3.8.1/VEX/pub/libvex_guest_ppc32.h
+===================================================================
+--- valgrind-3.8.1.orig/VEX/pub/libvex_guest_ppc32.h	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/pub/libvex_guest_ppc32.h	2013-03-20 11:33:22.658345250 +0100
+@@ -42,6 +42,7 @@
+ 
+ /*---------------------------------------------------------------*/
+ /*--- Vex's representation of the PPC32 CPU state             ---*/
++/*--- The *_ext are register extensions to 64 bit, for SPE    ---*/
+ /*---------------------------------------------------------------*/
+ 
+ #define VEX_GUEST_PPC32_REDIR_STACK_SIZE (16/*entries*/ * 2/*words per entry*/)
+@@ -239,6 +240,40 @@
+          threading on AIX. */
+       /* 1352 */ UInt guest_SPRG3_RO;
+ 
++      /* General Purpose Registers Extensions */
++      /* ??? */ UInt guest_GPR0_ext;
++      /* ??? */ UInt guest_GPR1_ext;
++      /* ??? */ UInt guest_GPR2_ext;
++      /* ??? */ UInt guest_GPR3_ext;
++      /* ??? */ UInt guest_GPR4_ext;
++      /* ??? */ UInt guest_GPR5_ext;
++      /* ??? */ UInt guest_GPR6_ext;
++      /* ??? */ UInt guest_GPR7_ext;
++      /* ??? */ UInt guest_GPR8_ext;
++      /* ??? */ UInt guest_GPR9_ext;
++      /* ??? */ UInt guest_GPR10_ext;
++      /* ??? */ UInt guest_GPR11_ext;
++      /* ??? */ UInt guest_GPR12_ext;
++      /* ??? */ UInt guest_GPR13_ext;
++      /* ??? */ UInt guest_GPR14_ext;
++      /* ??? */ UInt guest_GPR15_ext;
++      /* ??? */ UInt guest_GPR16_ext;
++      /* ??? */ UInt guest_GPR17_ext;
++      /* ??? */ UInt guest_GPR18_ext;
++      /* ??? */ UInt guest_GPR19_ext;
++      /* ??? */ UInt guest_GPR20_ext;
++      /* ??? */ UInt guest_GPR21_ext;
++      /* ??? */ UInt guest_GPR22_ext;
++      /* ??? */ UInt guest_GPR23_ext;
++      /* ??? */ UInt guest_GPR24_ext;
++      /* ??? */ UInt guest_GPR25_ext;
++      /* ??? */ UInt guest_GPR26_ext;
++      /* ??? */ UInt guest_GPR27_ext;
++      /* ??? */ UInt guest_GPR28_ext;
++      /* ??? */ UInt guest_GPR29_ext;
++      /* ??? */ UInt guest_GPR30_ext;
++      /* ??? */ UInt guest_GPR31_ext;
++
+       /* Padding to make it have an 8-aligned size */
+       /* 1356 */ UInt  padding;
+    }
+Index: valgrind-3.8.1/VEX/pub/libvex_ir.h
+===================================================================
+--- valgrind-3.8.1.orig/VEX/pub/libvex_ir.h	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/VEX/pub/libvex_ir.h	2013-03-20 11:33:22.662345251 +0100
+@@ -621,6 +621,7 @@
+          represent exactly all values of the source type.
+       */
+       Iop_F64toI16S, /* IRRoundingMode(I32) x F64 -> signed I16 */
++      Iop_F32toUI32S, /*                       F32 -> unsigned I32 */
+       Iop_F64toI32S, /* IRRoundingMode(I32) x F64 -> signed I32 */
+       Iop_F64toI64S, /* IRRoundingMode(I32) x F64 -> signed I64 */
+       Iop_F64toI64U, /* IRRoundingMode(I32) x F64 -> unsigned I64 */
+Index: valgrind-3.8.1/coregrind/m_machine.c
+===================================================================
+--- valgrind-3.8.1.orig/coregrind/m_machine.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/coregrind/m_machine.c	2013-03-20 11:46:46.674545053 +0100
+@@ -854,7 +854,7 @@
+      vki_sigaction_fromK_t saved_sigill_act, saved_sigfpe_act;
+      vki_sigaction_toK_t     tmp_sigill_act,   tmp_sigfpe_act;
+ 
+-     volatile Bool have_F, have_V, have_FX, have_GX, have_VX, have_DFP;
++     volatile Bool have_F, have_V, have_FX, have_GX, have_SP, have_VX, have_DFP;
+      Int r;
+ 
+      /* This is a kludge.  Really we ought to back-convert saved_act
+@@ -932,6 +932,14 @@
+      } else {
+         __asm__ __volatile__(".long 0xFC000034"); /* frsqrte 0,0 */
+      }
++     
++     /* Signal Processing optional */
++     have_SP = True;
++     if (__builtin_setjmp(env_unsup_insn)) {
++        have_SP = False;
++     } else {
++        __asm__ __volatile__(".long 0x10000217"); /* evor 0,0,0 */
++     }
+ 
+      /* VSX support implies Power ISA 2.06 */
+      have_VX = True;
+@@ -980,6 +990,7 @@
+      if (have_V)  vai.hwcaps |= VEX_HWCAPS_PPC32_V;
+      if (have_FX) vai.hwcaps |= VEX_HWCAPS_PPC32_FX;
+      if (have_GX) vai.hwcaps |= VEX_HWCAPS_PPC32_GX;
++     if (have_SP) vai.hwcaps |= VEX_HWCAPS_PPC32_SP;
+      if (have_VX) vai.hwcaps |= VEX_HWCAPS_PPC32_VX;
+      if (have_DFP) vai.hwcaps |= VEX_HWCAPS_PPC32_DFP;
+ 
+Index: valgrind-3.8.1/memcheck/mc_translate.c
+===================================================================
+--- valgrind-3.8.1.orig/memcheck/mc_translate.c	2013-03-20 11:33:22.682345256 +0100
++++ valgrind-3.8.1/memcheck/mc_translate.c	2013-03-20 11:33:22.674345254 +0100
+@@ -2420,7 +2420,10 @@
+       case Iop_MSubF64r32:
+          /* I32(rm) x F64 x F64 x F64 -> F64 */
+          return mkLazy4(mce, Ity_I64, vatom1, vatom2, vatom3, vatom4);
+-
++      case Iop_F32toI32S:
++        /* F32 x I32(rm) x U1 x U1 -> I32 */
++        /* atoms 3 & 4 are instruction selectors, not used in computation */
++        return mkLazy2(mce, Ity_I32, vatom1, vatom2);
+       case Iop_MAddF32:
+       case Iop_MSubF32:
+          /* I32(rm) x F32 x F32 x F32 -> F32 */

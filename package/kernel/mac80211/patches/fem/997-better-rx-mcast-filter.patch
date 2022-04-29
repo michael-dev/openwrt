@@ -1,0 +1,10 @@
+--- a/net/mac80211/rx.c
++++ b/net/mac80211/rx.c
+@@ -2582,6 +2582,7 @@ ieee80211_deliver_skb(struct ieee80211_r
+ 	    !(sdata->flags & IEEE80211_SDATA_DONT_BRIDGE_PACKETS) &&
+ 	    (sdata->vif.type != NL80211_IFTYPE_AP_VLAN || !sdata->u.vlan.sta)) {
+ 		if (is_multicast_ether_addr(ehdr->h_dest) &&
++		    ieee80211_vif_get_num_mcast_if(sdata) != 1 && /* the only station that could receive this is the sender */
+ 		    ieee80211_vif_get_num_mcast_if(sdata) != 0) {
+ 			/*
+ 			 * send multicast frames both to higher layers in

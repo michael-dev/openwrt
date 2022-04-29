@@ -26,7 +26,7 @@ include $(INCLUDE_DIR)/nls.mk
 define Package/gdb/Default
   SECTION:=devel
   CATEGORY:=Development
-  DEPENDS:=+!USE_MUSL:libthread-db $(ICONV_DEPENDS) $(INTL_DEPENDS)
+  DEPENDS:=+!USE_MUSL:libthread-db $(ICONV_DEPENDS) $(INTL_DEPENDS) +PACKAGE_zlib:zlib +liblzma
   URL:=https://www.gnu.org/software/gdb/
 endef
 

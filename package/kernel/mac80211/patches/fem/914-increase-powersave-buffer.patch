@@ -1,0 +1,11 @@
+--- a/net/mac80211/ieee80211_i.h
++++ b/net/mac80211/ieee80211_i.h
+@@ -44,7 +44,7 @@ struct ieee80211_local;
+ /* Maximum number of frames buffered to all STAs, including multicast frames.
+  * Note: increasing this limit increases the potential memory requirement. Each
+  * frame can be up to about 2 kB long. */
+-#define TOTAL_MAX_TX_BUFFER 512
++#define TOTAL_MAX_TX_BUFFER 4096
+ 
+ /* Required encryption head and tailroom */
+ #define IEEE80211_ENCRYPT_HEADROOM 8

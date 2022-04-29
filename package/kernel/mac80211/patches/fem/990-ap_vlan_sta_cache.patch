@@ -1,0 +1,106 @@
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -1794,6 +1794,12 @@ static int ieee80211_change_station(stru
+ 		if (test_sta_flag(sta, WLAN_STA_AUTHORIZED))
+ 			ieee80211_vif_dec_num_mcast(sta->sdata);
+ 
++		if (sta->sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
++			if (rcu_access_pointer(sta->sdata->u.vlan.sta0) == sta)
++				RCU_INIT_POINTER(sta->sdata->u.vlan.sta0, NULL);
++ 			atomic_dec(&sta->sdata->u.vlan.num_sta);
++		}
++
+ 		sta->sdata = vlansdata;
+ 		ieee80211_check_fast_xmit(sta);
+ 
+@@ -1802,6 +1808,13 @@ static int ieee80211_change_station(stru
+ 			cfg80211_send_layer2_update(sta->sdata->dev,
+ 						    sta->sta.addr);
+ 		}
++
++		if (sta->sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
++ 			if (atomic_inc_return(&sta->sdata->u.vlan.num_sta) == 1)
++				rcu_assign_pointer(sta->sdata->u.vlan.sta0, sta);
++			else
++				RCU_INIT_POINTER(sta->sdata->u.vlan.sta0, NULL);
++		}
+ 	}
+ 
+ 	err = sta_apply_parameters(local, sta, params);
+--- a/net/mac80211/ieee80211_i.h
++++ b/net/mac80211/ieee80211_i.h
+@@ -326,6 +326,9 @@ struct ieee80211_if_vlan {
+ 	/* used for all tx if the VLAN is configured to 4-addr mode */
+ 	struct sta_info __rcu *sta;
+ 	atomic_t num_mcast_sta; /* number of stations receiving multicast */
++
++	struct sta_info __rcu *sta0; /* the only station here */
++	atomic_t num_sta; /* number of station here */
+ };
+ 
+ struct mesh_stats {
+--- a/net/mac80211/sta_info.c
++++ b/net/mac80211/sta_info.c
+@@ -168,9 +168,22 @@ struct sta_info *sta_info_get(struct iee
+ {
+ 	struct ieee80211_local *local = sdata->local;
+ 	struct rhlist_head *tmp;
+-	struct sta_info *sta;
++	struct sta_info *sta = NULL;
+ 
+ 	rcu_read_lock();
++
++	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
++		sta = rcu_dereference(sdata->u.vlan.sta0);
++	WARN_ONCE((sta && sta->sdata != sdata),"sdata->u.vlan.sta0->sdata != sdata");
++
++	if (sta && sta->sdata == sdata && ether_addr_equal(sta->sta.addr, addr)) {
++		rcu_read_unlock();
++		/* this is safe as the caller must already hold
++		 * another rcu read section or the mutex
++		 */
++		return sta;
++	}
++
+ 	for_each_sta_info(local, addr, sta, tmp) {
+ 		if (sta->sdata == sdata) {
+ 			rcu_read_unlock();
+@@ -1044,6 +1057,11 @@ static int __must_check __sta_info_destr
+ 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+ 	    rcu_access_pointer(sdata->u.vlan.sta) == sta)
+ 		RCU_INIT_POINTER(sdata->u.vlan.sta, NULL);
++ 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
++		if (rcu_access_pointer(sdata->u.vlan.sta0) == sta)
++			RCU_INIT_POINTER(sdata->u.vlan.sta0, NULL);
++		atomic_dec(&sdata->u.vlan.num_sta);
++	}
+ 
+ 	return 0;
+ }
+--- a/net/mac80211/tx.c
++++ b/net/mac80211/tx.c
+@@ -4086,6 +4086,16 @@ ieee80211_convert_to_unicast(struct sk_b
+ 
+ 	rcu_read_lock();
+ 
++	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
++		first = rcu_dereference(sdata->u.vlan.sta0);
++	if (first) {
++		if (ether_addr_equal(eth->h_source, first->sta.addr))
++			first = NULL;
++		goto skip;
++	}
++	if (ieee80211_vif_get_num_mcast_if(sdata) == 0)
++		goto skip;
++
+ 	list_for_each_entry_rcu(sta, &local->sta_list, list) {
+ 		if (sdata != sta->sdata)
+ 			/* AP-VLAN mismatch */
+@@ -4107,6 +4117,7 @@ ieee80211_convert_to_unicast(struct sk_b
+ 		__skb_queue_tail(queue, cloned_skb);
+ 	}
+ 
++skip:
+ 	if (likely(first)) {
+ 		if (unlikely(ieee80211_change_da(skb, first)))
+ 			goto multicast;

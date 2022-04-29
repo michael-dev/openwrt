@@ -1,0 +1,10 @@
+--- a/drivers/of/address.c
++++ b/drivers/of/address.c
+@@ -475,6 +475,7 @@ static struct of_bus *of_match_bus(struc
+ 
+ static int of_empty_ranges_quirk(struct device_node *np)
+ {
++	return true;
+ 	if (IS_ENABLED(CONFIG_PPC)) {
+ 		/* To save cycles, we cache the result for global "Mac" setting */
+ 		static int quirk_state = -1;

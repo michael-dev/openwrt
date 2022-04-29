@@ -1,0 +1,83 @@
+--- a/arch/powerpc/boot/dts/fsl/p1010rdb.dtsi
++++ b/arch/powerpc/boot/dts/fsl/p1010rdb.dtsi
+@@ -44,19 +44,19 @@
+ 		partition@40000 {
+ 			/* 256KB for DTB Image */
+ 			reg = <0x00040000 0x00040000>;
+-			label = "NOR DTB Image";
++			label = "dtb";
+ 		};
+ 
+ 		partition@80000 {
+ 			/* 7 MB for Linux Kernel Image */
+ 			reg = <0x00080000 0x00700000>;
+-			label = "NOR Linux Kernel Image";
++			label = "linux";
+ 		};
+ 
+ 		partition@800000 {
+ 			/* 20MB for JFFS2 based Root file System */
+ 			reg = <0x00800000 0x01400000>;
+-			label = "NOR JFFS2 Root File System";
++			label = "rootfs";
+ 		};
+ 
+ 		partition@1f00000 {
+@@ -64,7 +64,7 @@
+ 			/* 512KB for u-boot Bootloader Image */
+ 			/* 512KB for u-boot Environment Variables */
+ 			reg = <0x01f00000 0x00100000>;
+-			label = "NOR U-Boot Image";
++			label = "u-boot";
+ 			read-only;
+ 		};
+ 	};
+@@ -118,32 +118,32 @@
+ 				/* 1MB for u-boot Bootloader Image */
+ 				/* 1MB for Environment */
+ 				reg = <0x0 0x00100000>;
+-				label = "SPI Flash U-Boot Image";
++				label = "u-boot";
+ 				read-only;
+ 			};
+ 
+ 			partition@100000 {
+-				/* 512KB for DTB Image */
+-				reg = <0x00100000 0x00080000>;
+-				label = "SPI Flash DTB Image";
++				/* 64KB U-boot env */
++				reg = <0x00100000 0x00010000>;
++				label = "u-boot env";
+ 			};
+ 
+-			partition@180000 {
+-				/* 4MB for Linux Kernel Image */
+-				reg = <0x00180000 0x00400000>;
+-				label = "SPI Flash Linux Kernel Image";
++			partition@110000 {
++				/* dtb */
++				reg = <0x00110000 0x00010000>;
++				label = "dtb";
+ 			};
+ 
+-			partition@580000 {
+-				/* 4MB for Compressed RFS Image */
+-				reg = <0x00580000 0x00400000>;
+-				label = "SPI Flash Compressed RFSImage";
++			partition@120000 {
++				/* whole image */
++				reg = <0x00120000 0x006F0000>;
++				label = "linux";
+ 			};
+ 
+-			partition@980000 {
+-				/* 6.5MB for JFFS2 based RFS */
+-				reg = <0x00980000 0x00680000>;
+-				label = "SPI Flash JFFS2 RFS";
++			partition@2B0000 {
++				/* squashfs + jffs2 */
++				reg = <0x002b0000 0x08550000>;
++				label = "rootfs";
+ 			};
+ 		};
+ 	};

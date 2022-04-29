@@ -1,0 +1,23 @@
+*** valgrind-3.8.1/coregrind/m_machine.c.bck	2013-06-05 16:16:16.766224637 +0200
+--- valgrind-3.8.1/coregrind/m_machine.c	2013-06-05 16:16:56.995291565 +0200
+***************
+*** 963,971 ****
+       vg_assert(r == 0);
+       r = VG_(sigprocmask)(VKI_SIG_SETMASK, &saved_set, NULL);
+       vg_assert(r == 0);
+!      VG_(debugLog)(1, "machine", "F %d V %d FX %d GX %d VX %d DFP %d\n",
+                      (Int)have_F, (Int)have_V, (Int)have_FX,
+!                     (Int)have_GX, (Int)have_VX, (Int)have_DFP);
+       /* Make FP a prerequisite for VMX (bogusly so), and for FX and GX. */
+       if (have_V && !have_F)
+          have_V = False;
+--- 963,971 ----
+       vg_assert(r == 0);
+       r = VG_(sigprocmask)(VKI_SIG_SETMASK, &saved_set, NULL);
+       vg_assert(r == 0);
+!      VG_(debugLog)(1, "machine", "F %d V %d FX %d GX %d SP %d VX %d DFP %d\n",
+                      (Int)have_F, (Int)have_V, (Int)have_FX,
+!                     (Int)have_GX, (Int)have_SP, (Int)have_VX, (Int)have_DFP);
+       /* Make FP a prerequisite for VMX (bogusly so), and for FX and GX. */
+       if (have_V && !have_F)
+          have_V = False;

@@ -1,0 +1,15 @@
+--- a/drivers/mtd/mtdoops.c
++++ b/drivers/mtd/mtdoops.c
+@@ -39,10 +39,10 @@
+ #define MTDOOPS_KERNMSG_MAGIC 0x5d005d00
+ #define MTDOOPS_HEADER_SIZE   8
+ 
+-static unsigned long record_size = 4096;
++static unsigned long record_size = 8192;
+ module_param(record_size, ulong, 0400);
+ MODULE_PARM_DESC(record_size,
+-		"record size for MTD OOPS pages in bytes (default 4096)");
++		"record size for MTD OOPS pages in bytes (default 8192)");
+ 
+ static char mtddev[80];
+ module_param_string(mtddev, mtddev, 80, 0400);

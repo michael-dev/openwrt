@@ -1,0 +1,8 @@
+--- a/doc/Makefile.am
++++ b/doc/Makefile.am
+@@ -1,4 +1,4 @@
+-man_MANS = nft.8 libnftables-json.5 libnftables.3
++man_MANS =
+ 
+ A2X_OPTS_MANPAGE = -L --doctype manpage --format manpage -D ${builddir}
+ 

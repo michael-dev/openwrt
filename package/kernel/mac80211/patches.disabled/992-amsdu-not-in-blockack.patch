@@ -1,0 +1,26 @@
+*** compat-wireless-2015-03-09/net/mac80211/tx.c	2015-08-07 13:46:55.590564366 +0200
+--- compat-wireless-2015-03-09/net/mac80211/tx.c	2015-08-07 13:48:22.683831359 +0200
+*************** static bool ieee80211_tx_prep_agg(struct
+*** 1059,1064 ****
+--- 1059,1067 ----
+  	bool reset_agg_timer = false;
+  	struct sk_buff *purge_skb = NULL;
+  
++ 	if (skb->protocol == ETH_P_AMSDU) {
++ 		info->flags &= ~IEEE80211_TX_CTL_AMPDU;
++ 	} else
+  	if (test_bit(HT_AGG_STATE_OPERATIONAL, &tid_tx->state)) {
+  		info->flags |= IEEE80211_TX_CTL_AMPDU;
+  		reset_agg_timer = true;
+--- compat-wireless-2015-03-09/net/mac80211/rc80211_minstrel_ht.c	2015-08-07 14:50:07.885592027 +0200
++++ compat-wireless-2015-03-09/net/mac80211/rc80211_minstrel_ht.c	2015-08-07 14:50:55.458281052 +0200
+@@ -698,6 +698,9 @@ minstrel_aggr_check(struct ieee80211_sta
+ 	if (unlikely(skb->protocol == cpu_to_be16(ETH_P_PAE)))
+ 		return;
+ 
++	if (skb->protocol == ETH_P_AMSDU)
++		return;
++
+ 	tid = *ieee80211_get_qos_ctl(hdr) & IEEE80211_QOS_CTL_TID_MASK;
+ 	if (likely(sta->ampdu_mlme.tid_tx[tid]))
+ 		return;

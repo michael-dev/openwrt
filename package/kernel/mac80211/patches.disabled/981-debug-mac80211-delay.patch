@@ -1,0 +1,411 @@
+diff -rup compat-wireless-2014-11-04.orig/drivers/net/wireless/ath/ath9k/main.c compat-wireless-2014-11-04/drivers/net/wireless/ath/ath9k/main.c
+--- compat-wireless-2014-11-04.orig/drivers/net/wireless/ath/ath9k/main.c	2015-03-18 14:18:25.610144768 +0100
++++ compat-wireless-2014-11-04/drivers/net/wireless/ath/ath9k/main.c	2015-03-17 20:38:05.920698515 +0100
+@@ -819,6 +819,10 @@ static void ath9k_tx(struct ieee80211_hw
+ 
+ 	ath_dbg(common, XMIT, "transmitting packet, skb: %p\n", skb);
+ 
++	if (skb->tstamp.tv64) {
++		//ath_err(common, "starting tx for skb %p\n", skb);
++	}
++
+ 	if (ath_tx_start(hw, skb, &txctl) != 0) {
+ 		ath_dbg(common, XMIT, "TX failed\n");
+ 		TX_STAT_INC(txctl.txq->axq_qnum, txfailed);
+diff -rup compat-wireless-2014-11-04.orig/drivers/net/wireless/ath/ath9k/xmit.c compat-wireless-2014-11-04/drivers/net/wireless/ath/ath9k/xmit.c
+--- compat-wireless-2014-11-04.orig/drivers/net/wireless/ath/ath9k/xmit.c	2015-03-18 14:18:25.878148598 +0100
++++ compat-wireless-2014-11-04/drivers/net/wireless/ath/ath9k/xmit.c	2015-03-18 14:31:11.413471942 +0100
+@@ -158,8 +158,13 @@ static void ath_txq_skb_done(struct ath_
+ {
+ 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+ 	struct ath_frame_info *fi = get_frame_info(skb);
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+ 	int q = fi->txq;
+ 
++	if (skb && skb->tstamp.tv64) {
++		//ath_err(common, "%s:%d done skb %p\n",__func__,__LINE__, skb);
++	}
++
+ 	if (q < 0)
+ 		return;
+ 
+@@ -213,11 +218,16 @@ ath_tx_tid_change_state(struct ath_softc
+ 	struct sk_buff *skb, *tskb;
+ 	struct ath_buf *bf;
+ 	struct ath_frame_info *fi;
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+ 
+ 	skb_queue_walk_safe(&tid->buf_q, skb, tskb) {
+ 		fi = get_frame_info(skb);
+ 		bf = fi->bf;
+ 
++		if (skb->tstamp.tv64) {
++			//ath_err(common, "%s:%d not sent %p as ampdu\n",__func__,__LINE__, skb);
++		}
++
+ 		tx_info = IEEE80211_SKB_CB(skb);
+ 		tx_info->flags &= ~IEEE80211_TX_CTL_AMPDU;
+ 
+@@ -673,10 +683,11 @@ static bool bf_is_ampdu_not_probing(stru
+ 
+ static void ath_tx_process_buffer(struct ath_softc *sc, struct ath_txq *txq,
+ 				  struct ath_tx_status *ts, struct ath_buf *bf,
+-				  struct list_head *bf_head)
++				  struct list_head *bf_head, const char* from)
+ {
+ 	struct ieee80211_tx_info *info;
+ 	bool txok, flush;
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+ 
+ 	txok = !(ts->ts_status & ATH9K_TXERR_MASK);
+ 	flush = !!(ts->ts_status & ATH9K_TX_FLUSH);
+@@ -689,6 +700,10 @@ static void ath_tx_process_buffer(struct
+ 	ts->duration = ath9k_hw_get_duration(sc->sc_ah, bf->bf_desc,
+ 					     ts->ts_rateindex);
+ 	if (!bf_isampdu(bf)) {
++		if (bf && bf->bf_mpdu && bf->bf_mpdu->tstamp.tv64) {
++			//ath_err(common, "done %p tx took %d from %s\n", bf->bf_mpdu, ts->duration, from);
++			//dump_stack();
++		}
+ 		if (!flush) {
+ 			info = IEEE80211_SKB_CB(bf->bf_mpdu);
+ 			memcpy(info->control.rates, bf->rates,
+@@ -869,15 +884,18 @@ static int ath_compute_num_delims(struct
+ 
+ static struct ath_buf *
+ ath_tx_get_tid_subframe(struct ath_softc *sc, struct ath_txq *txq,
+-			struct ath_atx_tid *tid, struct sk_buff_head **q)
++			struct ath_atx_tid *tid, struct sk_buff_head **q, const char* from)
+ {
+ 	struct ieee80211_tx_info *tx_info;
+ 	struct ath_frame_info *fi;
+ 	struct sk_buff *skb;
+ 	struct ath_buf *bf;
+ 	u16 seqno;
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
++	int iter = 0;
+ 
+ 	while (1) {
++		iter++;
+ 		*q = &tid->retry_q;
+ 		if (skb_queue_empty(*q))
+ 			*q = &tid->buf_q;
+@@ -915,6 +933,10 @@ ath_tx_get_tid_subframe(struct ath_softc
+ 			tx_info->flags &= ~IEEE80211_TX_CTL_AMPDU;
+ 
+ 		if (!(tx_info->flags & IEEE80211_TX_CTL_AMPDU)) {
++			if (skb->tstamp.tv64) {
++				//ath_err(common, "%s:%d skb %p not used for aggregation from %s in iter %d, axq_depth %d, ATH_NON_AGGR_MIN_QDEPTH %d\n",__func__,__LINE__, skb, from, iter, txq->axq_depth, ATH_NON_AGGR_MIN_QDEPTH);
++			}
++
+ 			bf->bf_state.bf_type = 0;
+ 			return bf;
+ 		}
+@@ -923,10 +945,17 @@ ath_tx_get_tid_subframe(struct ath_softc
+ 		seqno = bf->bf_state.seqno;
+ 
+ 		/* do not step over block-ack window */
+-		if (!BAW_WITHIN(tid->seq_start, tid->baw_size, seqno))
++		if (!BAW_WITHIN(tid->seq_start, tid->baw_size, seqno)) {
++			if (skb->tstamp.tv64) {
++				//ath_err(common, "%s:%d skb %p stopped by block-ack from %s\n",__func__,__LINE__, skb, from);
++			}
+ 			break;
++		}
+ 
+ 		if (tid->bar_index > ATH_BA_INDEX(tid->seq_start, seqno)) {
++			if (skb->tstamp.tv64) {
++				//ath_err(common, "%s:%d skb %p stopped by other from %s\n",__func__,__LINE__, skb, from);
++			}
+ 			struct ath_tx_status ts = {};
+ 			struct list_head bf_head;
+ 
+@@ -938,6 +967,10 @@ ath_tx_get_tid_subframe(struct ath_softc
+ 			continue;
+ 		}
+ 
++		if (skb->tstamp.tv64) {
++			//ath_err(common, "%s:%d skb %p used for aggregation from %s\n",__func__,__LINE__, skb, from);
++		}
++
+ 		return bf;
+ 	}
+ 
+@@ -1006,7 +1039,7 @@ ath_tx_form_aggr(struct ath_softc *sc, s
+ 
+ 		bf_prev = bf;
+ 
+-		bf = ath_tx_get_tid_subframe(sc, txq, tid, &tid_q);
++		bf = ath_tx_get_tid_subframe(sc, txq, tid, &tid_q, __func__);
+ 		if (!bf) {
+ 			closed = true;
+ 			break;
+@@ -1328,10 +1361,14 @@ ath_tx_form_burst(struct ath_softc *sc,
+ 	struct ath_buf *bf = bf_first, *bf_prev = NULL;
+ 	struct sk_buff *skb;
+ 	int nframes = 0;
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+ 
+ 	do {
+ 		struct ieee80211_tx_info *tx_info;
+ 		skb = bf->bf_mpdu;
++		if (skb->tstamp.tv64) {
++			//ath_err(common, "%s:%d used skb %p for aggregation\n",__func__,__LINE__, skb);
++		}
+ 
+ 		nframes++;
+ 		__skb_unlink(skb, tid_q);
+@@ -1343,7 +1380,7 @@ ath_tx_form_burst(struct ath_softc *sc,
+ 		if (nframes >= 2)
+ 			break;
+ 
+-		bf = ath_tx_get_tid_subframe(sc, txq, tid, &tid_q);
++		bf = ath_tx_get_tid_subframe(sc, txq, tid, &tid_q, __func__);
+ 		if (!bf)
+ 			break;
+ 
+@@ -1370,7 +1407,7 @@ static bool ath_tx_sched_aggr(struct ath
+ 
+ 	INIT_LIST_HEAD(&bf_q);
+ 
+-	bf = ath_tx_get_tid_subframe(sc, txq, tid, &tid_q);
++	bf = ath_tx_get_tid_subframe(sc, txq, tid, &tid_q, __func__);
+ 	if (!bf)
+ 		return false;
+ 
+@@ -1568,7 +1605,7 @@ void ath9k_release_buffered_frames(struc
+ 
+ 		ath_txq_lock(sc, tid->ac->txq);
+ 		while (nframes > 0) {
+-			bf = ath_tx_get_tid_subframe(sc, sc->tx.uapsdq, tid, &tid_q);
++			bf = ath_tx_get_tid_subframe(sc, sc->tx.uapsdq, tid, &tid_q, __func__);
+ 			if (!bf)
+ 				break;
+ 
+@@ -1747,7 +1784,7 @@ static void ath_drain_txq_list(struct at
+ 
+ 		lastbf = bf->bf_lastbf;
+ 		list_cut_position(&bf_head, list, &lastbf->list);
+-		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head);
++		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head, __func__);
+ 	}
+ }
+ 
+@@ -2223,6 +2260,7 @@ int ath_tx_start(struct ieee80211_hw *hw
+ 	struct ath_softc *sc = hw->priv;
+ 	struct ath_txq *txq = txctl->txq;
+ 	struct ath_atx_tid *tid = NULL;
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+ 	struct ath_buf *bf;
+ 	bool queue, skip_uapsd = false;
+ 	int q, ret;
+@@ -2285,6 +2323,10 @@ int ath_tx_start(struct ieee80211_hw *hw
+ 		if (info->flags & IEEE80211_TX_CTL_CLEAR_PS_FILT)
+ 			tid->ac->clear_ps_filter = true;
+ 
++		if (skb->tstamp.tv64) {
++			//ath_err(common, "%s:%d going for aggregation of %p\n",__func__,__LINE__, skb);
++		}
++
+ 		/*
+ 		 * Add this frame to software queue for scheduling later
+ 		 * for aggregation.
+@@ -2314,6 +2356,9 @@ int ath_tx_start(struct ieee80211_hw *hw
+ 		bf->bf_state.bfs_paprd_timestamp = jiffies;
+ 
+ 	ath_set_rates(vif, sta, bf);
++	if (skb->tstamp.tv64) {
++		//ath_err(common, "%s:%d going for skb %p to send\n",__func__,__LINE__, skb);
++	}
+ 	ath_tx_send_normal(sc, txq, tid, skb);
+ 
+ out:
+@@ -2447,6 +2492,9 @@ static void ath_tx_complete(struct ath_s
+ 	unsigned long flags;
+ 
+ 	ath_dbg(common, XMIT, "TX complete: skb: %p error:%d\n", skb, !!(tx_flags & ATH_TX_ERROR));
++	if (skb->tstamp.tv64) {
++		//ath_err(common, "%s:%d done skb  %p\n",__func__,__LINE__, skb);
++	}
+ 
+ 	if (sc->sc_ah->caldata)
+ 		set_bit(PAPRD_PACKET_SENT, &sc->sc_ah->caldata->cal_flags);
+@@ -2652,7 +2700,7 @@ static void ath_tx_processq(struct ath_s
+ 			ath_tx_return_buffer(sc, bf_held);
+ 		}
+ 
+-		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head);
++		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head, __func__);
+ 	}
+ 	ath_txq_unlock_complete(sc, txq);
+ }
+@@ -2685,8 +2733,24 @@ void ath_tx_edma_tasklet(struct ath_soft
+ 			break;
+ 
+ 		status = ath9k_hw_txprocdesc(ah, NULL, (void *)&ts);
+-		if (status == -EINPROGRESS)
++		if (status == -EINPROGRESS) {
++			/* txq = &sc->tx.txq[ts.qid];
++			ath_txq_lock(sc, txq);
++			fifo_list = &txq->txq_fifo[txq->txq_tailidx];
++			if (!list_empty(fifo_list)) {
++				bf = list_first_entry(fifo_list, struct ath_buf, list);
++				if (bf->bf_state.stale) {
++					
++					
++					
++				} else
++				if (!bf_isampdu(bf) && bf && bf->bf_mpdu && bf->bf_mpdu->tstamp.tv64) {
++					//ath_err(common, "%s:%d EINPROGRESS defers packet %p\n", __func__, __LINE__, bf->bf_mpdu);
++				}
++			}
++			ath_txq_unlock_complete(sc, txq); */
+ 			break;
++		}
+ 		if (status == -EIO) {
+ 			ath_dbg(common, XMIT, "Error processing tx status\n");
+ 			break;
+@@ -2747,7 +2811,11 @@ void ath_tx_edma_tasklet(struct ath_soft
+ 						  lastbf->list.prev);
+ 		}
+ 
+-		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head);
++		if (!bf_isampdu(bf) && bf && bf->bf_mpdu && bf->bf_mpdu->tstamp.tv64) {
++			//ath_err(common, "%s:%d done edma enqueue done for skb %p\n", __func__, __LINE__, bf->bf_mpdu);
++		}
++
++		ath_tx_process_buffer(sc, txq, &ts, bf, &bf_head, __func__);
+ 		ath_txq_unlock_complete(sc, txq);
+ 	}
+ }
+diff -rup compat-wireless-2014-11-04.orig/net/mac80211/status.c compat-wireless-2014-11-04/net/mac80211/status.c
+--- compat-wireless-2014-11-04.orig/net/mac80211/status.c	2015-03-18 14:18:26.130152198 +0100
++++ compat-wireless-2014-11-04/net/mac80211/status.c	2015-03-17 20:38:05.920698515 +0100
+@@ -483,11 +483,16 @@ static void ieee80211_tx_latency_end_msr
+ 	struct ieee80211_tx_latency_stat *tx_lat;
+ 	struct ieee80211_tx_latency_bin_ranges *tx_latency;
+ 	ktime_t skb_arv = skb->tstamp;
++	int debug=0;
++
++	if (skb->tstamp.tv64) {
++		debug = 1;
++	}
+ 
+ 	tx_latency = rcu_dereference(local->tx_latency);
+ 
+ 	/* assert Tx latency stats are enabled & frame arrived when enabled */
+-	if (!tx_latency || !ktime_to_ns(skb_arv))
++	if ((!tx_latency && !debug) || !ktime_to_ns(skb_arv))
+ 		return;
+ 
+ 	fc = hdr->frame_control;
+@@ -503,11 +508,19 @@ static void ieee80211_tx_latency_end_msr
+ 		tid = 0;
+ 	}
+ 
+-	tx_lat = &sta->tx_lat[tid];
+-
+ 	/* Calculate the latency */
+ 	msrmnt = ktime_to_ms(ktime_sub(ktime_get(), skb_arv));
+ 
++	if (debug) {
++		printk(KERN_DEBUG "%s: %s: sending frame from %pM to %pM in bss %pM took %d ms (skb %p)\n", __func__, sta->sdata->dev->name, hdr->addr3, hdr->addr1, hdr->addr2, msrmnt, skb);
++		//dump_stack();
++	}
++
++	if (!tx_latency)
++		return;
++
++	tx_lat = &sta->tx_lat[tid];
++
+ 	if (tx_lat->max < msrmnt) /* update stats */
+ 		tx_lat->max = msrmnt;
+ 	tx_lat->counter++;
+diff -rup compat-wireless-2014-11-04.orig/net/mac80211/tx.c compat-wireless-2014-11-04/net/mac80211/tx.c
+--- compat-wireless-2014-11-04.orig/net/mac80211/tx.c	2015-03-18 14:18:26.498157456 +0100
++++ compat-wireless-2014-11-04/net/mac80211/tx.c	2015-03-17 20:38:05.928698646 +0100
+@@ -38,6 +38,30 @@
+ 
+ /* misc utils */
+ 
++static void ieee80211_tx_latency_stat( const char* msg,
++				       struct net_device *dev,
++				       struct sk_buff *skb,
++				       struct ieee80211_hdr *hdr)
++{
++	u32 msrmnt;
++	__le16 fc;
++	ktime_t skb_arv = skb->tstamp;
++
++	/* assert Tx latency stats are enabled & frame arrived when enabled */
++	if (!ktime_to_ns(skb_arv))
++		return;
++
++	fc = hdr->frame_control;
++
++	if (!ieee80211_is_data(fc)) /* make sure it is a data frame */
++		return;
++
++	/* Calculate the latency */
++	msrmnt = ktime_to_ms(ktime_sub(ktime_get(), skb_arv));
++
++	printk(KERN_DEBUG "%s: %s: sending frame from %pM to %pM in bss %pM state %s took %d ms (skb %p)\n", __func__, (dev ? dev->name : "<NULL>"), hdr->addr3, hdr->addr1, hdr->addr2, (msg ? msg : "<NULL>"), msrmnt, skb);
++}
++
+ static __le16 ieee80211_duration(struct ieee80211_tx_data *tx,
+ 				 struct sk_buff *skb, int group_addr,
+ 				 int next_frag_len)
+@@ -455,6 +479,8 @@ ieee80211_tx_h_multicast_ps_buf(struct i
+ 	} else
+ 		tx->local->total_ps_buffered++;
+ 
++	//ieee80211_tx_latency_stat( __func__, tx->sdata->dev, tx->skb, hdr);
++
+ 	skb_queue_tail(&ps->bc_buf, tx->skb);
+ 
+ 	return TX_QUEUED;
+@@ -526,6 +552,8 @@ ieee80211_tx_h_unicast_ps_buf(struct iee
+ 		} else
+ 			tx->local->total_ps_buffered++;
+ 
++		//ieee80211_tx_latency_stat( __func__, tx->sdata->dev, tx->skb, hdr);
++
+ 		info->control.jiffies = jiffies;
+ 		info->control.vif = &tx->sdata->vif;
+ 		info->flags |= IEEE80211_TX_INTFL_NEED_TXPROCESSING;
+@@ -1235,6 +1263,8 @@ static void ieee80211_drv_tx(struct ieee
+ 	if (!pubtxq)
+ 		goto tx_normal;
+ 
++	//ieee80211_tx_latency_stat( "drv_tx.1", sdata->dev, skb, hdr);
++
+ 	ac = pubtxq->ac;
+ 	txq = container_of(pubtxq, struct txq_info, txq);
+ 	atomic_inc(&sdata->txq_len[ac]);
+@@ -1247,6 +1277,7 @@ static void ieee80211_drv_tx(struct ieee
+ 	return;
+ 
+ tx_normal:
++	//ieee80211_tx_latency_stat( "drv_tx.2", sdata->dev, skb, hdr);
+ 	drv_tx(local, &control, skb);
+ }
+ 
+@@ -1846,14 +1877,12 @@ fail:
+  * freed.
+  */
+ static void ieee80211_tx_latency_start_msrmnt(struct ieee80211_local *local,
+ 					      struct sk_buff *skb)
+ {
+-	struct ieee80211_tx_latency_bin_ranges *tx_latency;
+-
+-	tx_latency = rcu_dereference(local->tx_latency);
+-	if (!tx_latency)
+-		return;
+-	skb->tstamp = ktime_get();
++	if ((skb->data[ETH_ALEN + 0] == 0x66 && skb->data[ETH_ALEN + 1] == 0x65 && skb->data[ETH_ALEN + 2] == 0x6d && skb->data[ETH_ALEN + 5] == 0xf0) || (skb->data[0] == 0x66 && skb->data[1] == 0x65 && skb->data[2] == 0x6d && skb->data[5] == 0xf0))
++		skb->tstamp = ktime_get();
++	else
++		skb->tstamp.tv64 = 0;
+ }
+ 
+ /**

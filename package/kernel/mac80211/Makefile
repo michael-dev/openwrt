@@ -78,6 +78,12 @@ config-y:= \
 	WLAN_VENDOR_ST \
 	WLAN_VENDOR_TI \
 	WLAN_VENDOR_ZYDAS \
+#	MAC80211_DEBUG_MENU \
+	MAC80211_VERBOSE_DEBUG \
+	MAC80211_PS_DEBUG \
+	MAC80211_HT_DEBUG \
+	MAC80211_STA_DEBUG \
+	MAC80211_DEBUG_COUNTERS \
 
 config-$(call config_package,cfg80211) += CFG80211
 config-$(CONFIG_PACKAGE_CFG80211_TESTMODE) += NL80211_TESTMODE
@@ -504,6 +510,7 @@ define Build/Patch
 	$(call PatchDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/rt2x00,rt2x00/)
 	$(call PatchDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/mwl,mwl/)
 	$(call PatchDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/brcm,brcm/)
+	$(call PatchDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/fem,fem/)
 	$(if $(QUILT),touch $(PKG_BUILD_DIR)/.quilt_used)
 endef
 
@@ -514,6 +521,7 @@ define Quilt/Refresh/Package
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/rt2x00,rt2x00/)
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/mwl,mwl/)
 	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/brcm,brcm/)
+	$(call Quilt/RefreshDir,$(PKG_BUILD_DIR),$(PATCH_DIR)/fem,fem/)
 endef
 
 define Build/Compile

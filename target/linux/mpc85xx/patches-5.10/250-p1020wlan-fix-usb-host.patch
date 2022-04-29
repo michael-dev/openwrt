@@ -1,0 +1,10 @@
+--- a/drivers/usb/host/ehci-fsl.c
++++ b/drivers/usb/host/ehci-fsl.c
+@@ -235,7 +235,6 @@ static int ehci_fsl_setup_phy(struct usb
+ 		    PHY_CLK_VALID)) {
+ 			dev_warn(hcd->self.controller,
+ 				 "USB PHY clock invalid\n");
+-			return -EINVAL;
+ 		}
+ 	}
+ 

@@ -1,0 +1,64 @@
+These patches change the flash base address to 0xec000000 (as used by u-boot) and set flashing boarders as used by fem based on that offset.
+--- a/arch/powerpc/boot/dts/p1020wlan.dts
++++ b/arch/powerpc/boot/dts/p1020wlan.dts
+@@ -22,7 +22,7 @@
+ 		reg = <0 0xffe05000 0 0x1000>;
+ 
+ 		/* NOR flash and cpld */
+-		ranges = <0x0 0x0 0x0 0xee000000 0x04000000
++		ranges = <0x0 0x0 0x0 0xec000000 0x04000000
+ 			  0x3 0x0 0x0 0xffa00000 0x01000000>;
+ 	};
+ 
+--- a/arch/powerpc/boot/dts/p1020wlan.dtsi
++++ b/arch/powerpc/boot/dts/p1020wlan.dtsi
+@@ -37,27 +37,41 @@
+ 		#address-cells = <1>;
+ 		#size-cells = <1>;
+ 		compatible = "cfi-flash";
+-		reg = <0x0 0x0 0x2000000>;
++		reg = <0x0 0x0 0x04000000>;
+ 		bank-width = <2>;
+ 		device-width = <1>;
+ 
+ 			partition@0 {
+-				/* 4 MB for Linux Kernel Image */
+-				reg = <0x0 0x400000>;
++				/* erase 0xec000000 0xee3fffff */
++				reg = <0x00000000 0x02400000>;
+ 				label = "linux";
+ 			};
+ 
+-			partition@400000 {
++			partition@2400000 {
+ 				/* 27MB for JFFS2 based Root file System */
+-				reg = <0x00400000 0x01b00000>;
++				/* "erase  0xee400000 0xefefffff */
++				reg = <0x02400000 0x01b00000>;
+ 				label = "rootfs";
+ 			};
++			partition@3f40000 {
++				/* erase  0xeff40000 0xeff5ffff */
++				reg = <0x03f40000 0x00020000>;
++				label = "fdt";
++			};
+ 
+-			partition@1f00000 {
++			partition@3f60000 {
+ 				/* This location must not be altered  */
+-				/* 512KB for u-boot Bootloader Image */
+ 				/* 512KB for u-boot Environment Variables */
+-				reg = <0x01f00000 0x00100000>;
++				reg = <0x03f60000 0x00020000>;
++				label = "NOR (RO) U-Boot Variables";
++				read-only;
++			};
++
++			partition@3f80000 {
++				/* erase eff80000 +\$filesize */
++				/* This location must not be altered  */
++				/* 512KB for u-boot Bootloader Image */
++				reg = <0x03f80000 0x00080000>;
+ 				label = "NOR (RO) U-Boot Image";
+ 				read-only;
+ 			};

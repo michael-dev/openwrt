@@ -1,0 +1,13 @@
+--- procd-2017-03-05-8f218f56/rcS.c	2017-03-23 16:36:28.921788726 +0100
++++ procd-2017-03-05-8f218f56/rcS.c	2017-03-23 16:36:37.449788889 +0100
+@@ -122,8 +122,8 @@
+ 	s->proc.task.type = &initd_type;
+ 	s->proc.task.complete = q_initd_complete;
+ 	if (!strcmp(param, "stop") || !strcmp(param, "shutdown")) {
+-		s->proc.task.run_timeout = 15000;
+-		s->proc.task.cancel_timeout = 10000;
++		s->proc.task.run_timeout = 300000;
++		s->proc.task.cancel_timeout = 200000;
+ 	}
+ 	s->param = p;
+ 	s->file = f;

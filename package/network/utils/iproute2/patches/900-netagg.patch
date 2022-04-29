@@ -1,0 +1,289 @@
+Index: iproute2-5.9.0/ip/iplink_agg.c
+===================================================================
+--- /dev/null
++++ iproute2-5.9.0/ip/iplink_agg.c
+@@ -0,0 +1,271 @@
++/*
++ * iplink_agg.c	AGG device support
++ *
++ *              This program is free software; you can redistribute it and/or
++ *              modify it under the terms of the GNU General Public License
++ *              as published by the Free Software Foundation; either version
++ *              2 of the License, or (at your option) any later version.
++ *
++ * Authors:     Michael Braun <michael-dev@fami-braun.de>
++ */
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++#include <net/if.h>
++#include <linux/ip.h>
++#include <linux/if_link.h>
++//#include <arpa/inet.h>
++
++#include "rt_names.h"
++#include "utils.h"
++#include "ip_common.h"
++
++#define AGG_ATTRSET(attrs, type) (((attrs) & (1L << (type))) != 0)
++
++enum {
++	AGG_INFO_UNSPEC,
++	AGG_INFO_REAL_DEV, // u32
++	AGG_INFO_MAXDELAY_USEC, // u32
++	AGG_INFO_STATIC_RATE, // boolean
++	AGG_INFO_MAX_NUM_PACKETS, // u8
++	AGG_INFO_MAX_NUM_BYTES, // u32
++	AGG_INFO_TX_QLEN, // u16
++	AGG_INFO_DEBUG, // boolean
++	AGG_INFO_NOSKIPAGG, // boolean
++	AGG_INFO_PRIO_VLAN, // u16
++	AGG_INFO_BURST, // u8
++	AGG_INFO_RX_QLEN, // u16
++	AGG_INFO_RX_WEIGHT, // u16
++	AGG_INFO_RX_MODE, // u16
++	__AGG_INFO_MAX
++#define AGG_INFO_MAX	(__AGG_INFO_MAX - 1)
++};
++
++static void print_explain(FILE *f)
++{
++	fprintf(f,
++		"Usage: ... agg dev PHYS_DEV\n"
++		"		[ maxdelay USECS ]\n"
++		"		[ static_rate {true|false} ]\n"
++		"		[ max_packets 0..255 ]\n"
++		"		[ max_bytes NUMBER ]\n"
++		"		[ tx_qlen NUMBER ]\n"
++		"		[ debug {true|false} ]\n"
++		"		[ noskipagg {true|false} ]\n"
++		"		[ prio_vid VID ]\n"
++		"		[ burst VID ]\n"
++		"		[ rx_qlen NUMBER ]\n"
++		"		[ rx_weight NUMBER ]\n"
++		"		[ rx_mode NUMBER ]\n"
++	);
++}
++
++static void explain(void)
++{
++	print_explain(stderr);
++}
++
++static void check_duparg(__u64 *attrs, int type, const char *key,
++			 const char *argv)
++{
++	if (!AGG_ATTRSET(*attrs, type)) {
++		*attrs |= (1L << type);
++		return;
++	}
++	duparg2(key, argv);
++}
++
++static int agg_parse_opt(struct link_util *lu, int argc, char **argv,
++			  struct nlmsghdr *n)
++{
++	__u64 attrs = 0;
++
++	while (argc > 0) {
++		if (!matches(*argv, "dev")) {
++			unsigned int link;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_REAL_DEV, "dev", *argv);
++			link = ll_name_to_index(*argv);
++			if (!link)
++				exit(nodev(*argv));
++			addattr32(n, 1024, AGG_INFO_REAL_DEV, link);
++		} else if (!matches(*argv, "maxdelay")) {
++			__u32 maxdelay = 0;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_MAXDELAY_USEC, "maxdelay", *argv);
++			if (get_u32(&maxdelay, *argv, 0))
++				invarg("maxage", *argv);
++			addattr32(n, 1024, AGG_INFO_MAXDELAY_USEC, maxdelay);
++		} else if (!matches(*argv, "static_rate")) {
++			__u8 sr;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_STATIC_RATE, "static_rate", *argv);
++                        if (strcmp(*argv, "true") == 0) {
++				sr = 1;
++                        } else if (strcmp(*argv, "false") == 0) {
++				sr = 0;
++			} else
++				invarg("static_rate", *argv);
++			addattr8(n, 1024, AGG_INFO_STATIC_RATE, sr);
++		} else if (!matches(*argv, "max_packets")) {
++			__u8 mp;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_MAX_NUM_PACKETS, "max_packets", *argv);
++			if (get_u8(&mp, *argv, 0))
++				invarg("max_packets", *argv);
++			addattr8(n, 1024, AGG_INFO_MAX_NUM_PACKETS, mp);
++		} else if (!matches(*argv, "max_bytes")) {
++			__u32 mb;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_MAX_NUM_BYTES, "max_bytes", *argv);
++			if (get_u32(&mb, *argv, 0))
++				invarg("max_bytes", *argv);
++			addattr32(n, 1024, AGG_INFO_MAX_NUM_BYTES, mb);
++		} else if (!matches(*argv, "qlen")) {
++			__u16 qlen;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_TX_QLEN, "qlen", *argv);
++			if (get_u16(&qlen, *argv, 0))
++				invarg("qlen", *argv);
++			addattr16(n, 1024, AGG_INFO_TX_QLEN, qlen);
++		} else if (!matches(*argv, "tx_qlen")) {
++			__u16 qlen;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_TX_QLEN, "tx_qlen", *argv);
++			if (get_u16(&qlen, *argv, 0))
++				invarg("tx_qlen", *argv);
++			addattr16(n, 1024, AGG_INFO_TX_QLEN, qlen);
++		} else if (!matches(*argv, "rx_qlen")) {
++			__u16 qlen;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_RX_QLEN, "rx_qlen", *argv);
++			if (get_u16(&qlen, *argv, 0))
++				invarg("rx_qlen", *argv);
++			addattr16(n, 1024, AGG_INFO_RX_QLEN, qlen);
++		} else if (!matches(*argv, "debug")) {
++			__u8 d;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_DEBUG, "debug", *argv);
++                        if (strcmp(*argv, "true") == 0) {
++				d = 1;
++                        } else if (strcmp(*argv, "false") == 0) {
++				d = 0;
++			} else
++				invarg("debug", *argv);
++			addattr8(n, 1024, AGG_INFO_DEBUG, d);
++		} else if (!matches(*argv, "noskipagg")) {
++			__u8 nsa;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_NOSKIPAGG, "noskipagg", *argv);
++                        if (strcmp(*argv, "true") == 0) {
++				nsa = 1;
++                        } else if (strcmp(*argv, "false") == 0) {
++				nsa = 0;
++			} else
++				invarg("noskipagg", *argv);
++			addattr8(n, 1024, AGG_INFO_NOSKIPAGG, nsa);
++		} else if (!matches(*argv, "prio_vid")) {
++			__u16 prio_vid;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_PRIO_VLAN, "prio_vid", *argv);
++			if (get_u16(&prio_vid, *argv, 0))
++				invarg("prio_vid", *argv);
++			addattr16(n, 1024, AGG_INFO_PRIO_VLAN, prio_vid);
++		} else if (!matches(*argv, "burst")) {
++			__u8 b;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_BURST, "burst", *argv);
++			if (get_u8(&b, *argv, 0))
++				invarg("burst", *argv);
++			addattr8(n, 1024, AGG_INFO_BURST, b);
++		} else if (!matches(*argv, "rx_weight")) {
++			__u16 weight;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_RX_WEIGHT, "rx_weight", *argv);
++			if (get_u16(&weight, *argv, 0))
++				invarg("rx_weight", *argv);
++			addattr16(n, 1024, AGG_INFO_RX_WEIGHT, weight);
++		} else if (!matches(*argv, "rx_mode")) {
++			__u16 mode;
++
++			NEXT_ARG();
++			check_duparg(&attrs, AGG_INFO_RX_MODE, "rx_mode", *argv);
++			if (get_u16(&mode, *argv, 0))
++				invarg("rx_mode", *argv);
++			addattr16(n, 1024, AGG_INFO_RX_MODE, mode);
++		} else if (matches(*argv, "help") == 0) {
++			explain();
++			return -1;
++		} else {
++			fprintf(stderr, "agg: unknown command \"%s\"?\n", *argv);
++			explain();
++			return -1;
++		}
++		argc--, argv++;
++	}
++
++	return 0;
++}
++
++static void agg_print_opt(struct link_util *lu, FILE *f, struct rtattr *tb[])
++{
++	if (!tb)
++		return;
++
++	if (tb[AGG_INFO_REAL_DEV] &&
++	    rta_getattr_u32(tb[AGG_INFO_REAL_DEV]))
++	    print_string(PRINT_ANY, "dev", "dev %s ", ll_index_to_name(rta_getattr_u32(tb[AGG_INFO_REAL_DEV])));
++	if (tb[AGG_INFO_MAXDELAY_USEC])
++	    print_uint(PRINT_ANY, "maxdelay", "maxdelay %u ", rta_getattr_u32(tb[AGG_INFO_MAXDELAY_USEC]));
++	if (tb[AGG_INFO_STATIC_RATE])
++	    print_bool(PRINT_ANY, "static_rate", "static_rate %s ", rta_getattr_u8(tb[AGG_INFO_STATIC_RATE]));
++	if (tb[AGG_INFO_MAX_NUM_PACKETS])
++	    print_uint(PRINT_ANY, "max_packets", "max_packets %u ", rta_getattr_u8(tb[AGG_INFO_MAX_NUM_PACKETS]));
++	if (tb[AGG_INFO_MAX_NUM_BYTES])
++	    print_uint(PRINT_ANY, "max_bytes", "max_bytes %u ", rta_getattr_u32(tb[AGG_INFO_MAX_NUM_BYTES]));
++	if (tb[AGG_INFO_TX_QLEN])
++	    print_uint(PRINT_ANY, "tx_qlen", "tx_qlen %u ", rta_getattr_u16(tb[AGG_INFO_TX_QLEN]));
++	if (tb[AGG_INFO_RX_QLEN])
++	    print_uint(PRINT_ANY, "rx_qlen", "rx_qlen %u ", rta_getattr_u16(tb[AGG_INFO_RX_QLEN]));
++	if (tb[AGG_INFO_DEBUG])
++	    print_bool(PRINT_ANY, "debug", "debug %s ", rta_getattr_u8(tb[AGG_INFO_DEBUG]));
++	if (tb[AGG_INFO_NOSKIPAGG])
++	    print_bool(PRINT_ANY, "noskipagg", "noskipagg %s ", rta_getattr_u8(tb[AGG_INFO_NOSKIPAGG]));
++	if (tb[AGG_INFO_PRIO_VLAN])
++	    print_uint(PRINT_ANY, "prio_vid", "prio_vid %u ", rta_getattr_u16(tb[AGG_INFO_PRIO_VLAN]));
++	if (tb[AGG_INFO_BURST])
++	    print_uint(PRINT_ANY, "burst", "burst %u ", rta_getattr_u32(tb[AGG_INFO_BURST]));
++	if (tb[AGG_INFO_RX_WEIGHT])
++	    print_uint(PRINT_ANY, "rx_weight", "rx_weight %u ", rta_getattr_u16(tb[AGG_INFO_RX_WEIGHT]));
++	if (tb[AGG_INFO_RX_MODE])
++	    print_uint(PRINT_ANY, "rx_mode", "rx_mode %u ", rta_getattr_u16(tb[AGG_INFO_RX_MODE]));
++
++}
++
++static void agg_print_help(struct link_util *lu, int argc, char **argv,
++			     FILE *f)
++{
++	print_explain(f);
++}
++
++struct link_util agg_link_util = {
++	.id		= "agg",
++	.maxattr	= AGG_INFO_MAX,
++	.parse_opt	= agg_parse_opt,
++	.print_opt	= agg_print_opt,
++	.print_help	= agg_print_help,
++};
+Index: iproute2-5.9.0/ip/Makefile
+===================================================================
+--- iproute2-5.9.0.orig/ip/Makefile
++++ iproute2-5.9.0/ip/Makefile
+@@ -11,7 +11,7 @@ IPOBJ=ip.o ipaddress.o ipaddrlabel.o ipr
+     iplink_bridge.o iplink_bridge_slave.o ipfou.o iplink_ipvlan.o \
+     iplink_geneve.o iplink_vrf.o iproute_lwtunnel.o ipmacsec.o ipila.o \
+     ipvrf.o iplink_xstats.o ipseg6.o iplink_netdevsim.o iplink_rmnet.o \
+-    ipnexthop.o ipmptcp.o iplink_bareudp.o
++    ipnexthop.o ipmptcp.o iplink_bareudp.o iplink_agg.o
+ 
+ RTMONOBJ=rtmon.o
+ 

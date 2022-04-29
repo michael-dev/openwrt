@@ -1,0 +1,19 @@
+diff -rup compat-wireless-2014-11-04.orig/net/wireless/util.c compat-wireless-2014-11-04/net/wireless/util.c
+--- compat-wireless-2014-11-04.orig/net/wireless/util.c	2015-03-19 12:51:37.547786024 +0100
++++ compat-wireless-2014-11-04/net/wireless/util.c	2015-03-19 13:05:36.272555873 +0100
+@@ -715,7 +715,15 @@ unsigned int cfg80211_classify8021d(stru
+ 			return vlan_priority;
+ 	}
+ 
++	/* debug */
++	if ((skb->data[ETH_ALEN + 0] == 0x66 && skb->data[ETH_ALEN + 1] == 0x65 && skb->data[ETH_ALEN + 2] == 0x6d && skb->data[ETH_ALEN + 5] == 0xf0) || (skb->data[0] == 0x66 && skb->data[1] == 0x65 && skb->data[2] == 0x6d && skb->data[5] == 0xf0)) {
++		return 5;
++	}
++
+ 	switch (skb->protocol) {
++/*	case htons(ETH_P_ARP):
++		return 5;
++*/
+ 	case htons(ETH_P_IP):
+ 		dscp = ipv4_get_dsfield(ip_hdr(skb)) & 0xfc;
+ 		break;

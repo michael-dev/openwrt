@@ -1,0 +1,39 @@
+From 1e73f353cfe7b2b72522713cce9d8c750361874b Mon Sep 17 00:00:00 2001
+From: Michael Braun <michael-dev@fami-braun.de>
+Date: Sat, 6 Mar 2021 15:19:06 +0100
+Subject: [PATCH] gianfar: see 0bcd952feec7042d9a5383b639c8edc943402add
+
+---
+ drivers/net/ethernet/freescale/gianfar.c | 12 ++++++++----
+ 1 file changed, 8 insertions(+), 4 deletions(-)
+
+--- a/drivers/net/ethernet/freescale/gianfar.c
++++ b/drivers/net/ethernet/freescale/gianfar.c
+@@ -2644,9 +2644,11 @@ static int gfar_poll_rx_sq(struct napi_s
+ 
+ 	work_done = gfar_clean_rx_ring(rx_queue, budget);
+ 
+-	if (work_done < budget) {
++	if (work_done == budget)
++		return work_done;
++
++	if (likely(napi_complete_done(napi, work_done))) {
+ 		u32 imask;
+-		napi_complete_done(napi, work_done);
+ 		/* Clear the halt bit in RSTAT */
+ 		gfar_write(&regs->rstat, gfargrp->rstat);
+ 
+@@ -2733,9 +2735,11 @@ static int gfar_poll_rx(struct napi_stru
+ 		}
+ 	}
+ 
+-	if (!num_act_queues) {
++	if (num_act_queues)
++		return work_done; // should be == budget except for rounding or some queues running empty
++
++	if (likely(napi_complete_done(napi, work_done))) {
+ 		u32 imask;
+-		napi_complete_done(napi, work_done);
+ 
+ 		/* Clear the halt bit in RSTAT */
+ 		gfar_write(&regs->rstat, gfargrp->rstat);

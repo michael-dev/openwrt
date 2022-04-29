@@ -26,6 +26,7 @@ define Package/libnl/default
   CATEGORY:=Libraries
   URL:=http://www.infradead.org/~tgr/libnl/
   ABI_VERSION:=200
+#  DEPENDS:=+libpthread +libasan
 endef
 
 define Package/libnl-core
@@ -79,7 +80,17 @@ define Package/libnl/description
  message construction and parsing, object caching system, etc.
 endef
 
-TARGET_CFLAGS += -ffunction-sections -fdata-sections $(FPIC)
+TARGET_CPPFLAGS += -fno-omit-frame-pointer
+#TARGET_CPPFLAGS += -fsanitize=address
+TARGET_CFLAGS += -ffunction-sections -fdata-sections $(FPIC) -fno-omit-frame-pointer
+#TARGET_CFLAGS += -fsanitize=address
+TARGET_CPPFLAGS := $(subst -Os,-O2,$(TARGET_CPPFLAGS)) -O2 -g3
+TARGET_CFLAGS := $(subst -Os,-O2,$(TARGET_CFLAGS)) -O2 -g3
+#TARGET_LDFLAGS += -lasan -fsanitize=address
+#TARGET_LDFLAGS_C += -lasan -fsanitize=address
+
+RSTRIP:=:
+STRIP:=:
 
 CONFIGURE_ARGS += \
 	--disable-debug

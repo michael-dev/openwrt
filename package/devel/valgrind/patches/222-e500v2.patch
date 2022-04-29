@@ -1,0 +1,13 @@
+diff -rcp valgrind-3.8.1.orig/VEX/priv/main_main.c valgrind-3.8.1/VEX/priv/main_main.c
+*** valgrind-3.8.1.orig/VEX/priv/main_main.c	2013-06-05 20:05:16.826757470 +0200
+--- valgrind-3.8.1/VEX/priv/main_main.c	2013-06-05 20:06:31.475890540 +0200
+*************** static HChar* show_hwcaps_ppc32 ( UInt h
+*** 1160,1165 ****
+--- 1160,1166 ----
+           UInt c  = hwcaps;
+     if (c == 0)           return "ppc32-int";
+     if (c == F)           return "ppc32-int-flt";
++    if (c == SP)          return "ppc32-int-SPE";
+     if (c == (F|FX))      return "ppc32-int-flt-FX";
+     if (c == (F|GX))      return "ppc32-int-flt-GX";
+     if (c == (F|SP))      return "ppc32-int-flt-SPE";

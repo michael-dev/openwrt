@@ -1,0 +1,89 @@
+Disabled as dhcp requests coming from wifi do not have a vlan configured, yet.
+Dhcpsnooping checks the switchport instead.
+
+[  676.564601] ------------[ cut here ]------------
+[  676.564658] WARNING: CPU: 0 PID: 0 at net/netfilter/nfnetlink_log.c:416 __build_packet_message.isra.17+0x85c/0x8c8
+[  676.564667] Modules linked in: iptable_nat ath9k xt_state xt_nat xt_conntrack xt_REDIRECT xt_MASQUERADE xt_FLOWOFFLOAD nft_redir nft_ct nf_nat_ftp nf_nat nf_flow_table_hw nf_flow_table nf_conntrack_rtcache nf_conntrack_ftp nf_conntrack mmc_spi carl9170 ath9k_htc ath9k_common xt_time xt_tcpudp xt_po
+licy xt_physdev xt_multiport xt_mark xt_mac xt_limit xt_esp xt_comment xt_TCPMSS xt_LOG xt_CHECKSUM of_mmc_spi nft_reject_bridge nft_quota nft_objref nft_fwd_netdev nft_dup_netdev nfnetlink_queue nf_dup_netdev nf_defrag_ipv6 nf_defrag_ipv4 macvlan mac80211 iptable_mangle iptable_filter ipt_ah ipt_REJE
+CT ip_tables crc8 crc7 crc_itu_t crc_ccitt br_netfilter batman_adv ath9k_hw ath act_vlan sch_agg nft_unagg dev_agg sch_teql sch_sfq sch_red sch_prio sch_pie sch_multiq sch_gred sch_fq sch_dsmark sch_codel em_text em_nbyte em_meta em_cmp act_simple act_police act_pedit act_ipt act_gact act_csum libcrc3
+2c em_ipset cls_bpf act_bpf sch_tbf sch_ingress sch_htb sch_hfsc em_u32 cls_u32 cls_tcindex cls_route
+[  676.564935]  cls_matchall cls_fw cls_flow cls_basic act_skbedit act_mirred i2c_dev ledtrig_heartbeat ledtrig_gpio cryptodev booke_wdt xt_set x_tables ip_set_list_set ip_set_hash_netportnet ip_set_hash_netport ip_set_hash_netnet ip_set_hash_netiface ip_set_hash_net ip_set_hash_mac ip_set_hash_ipport
+net ip_set_hash_ipportip ip_set_hash_ipport ip_set_hash_ipmark ip_set_hash_ip ip_set_bitmap_port ip_set_bitmap_ipmac ip_set_bitmap_ip ip_set msdos ip6_gre ip_gre gre dummy ipcomp6 xfrm6_tunnel esp6 ah6 xfrm4_tunnel ipcomp esp4 ah4 ipip ip6_tunnel tunnel6 tunnel4 ip_tunnel xfrm_user xfrm_ipcomp af_key 
+xfrm_algo vfat fat nls_utf8 nls_iso8859_1 nls_cp437 wp512 twofish_generic twofish_common tgr192 tea serpent_generic khazad cast6_generic cast5_generic cast_common camellia_generic blowfish_generic blowfish_common anubis ecdh_generic ecc xts xcbc crypto_user algif_skcipher algif_rng algif_hash algif_ae
+ad af_alg sha1_generic rmd160 michael_mic md5 md4 kpp echainiv ecb des_generic deflate zlib_deflate
+[  676.565196]  cts cmac ccm cbc crypto_acompress cfg80211 compat mmc_block gpio_keys_polled usb_storage tun mmc_core input_polldev leds_gpio fsl_mph_dr_of ehci_platform ehci_fsl sd_mod scsi_mod ehci_hcd button_hotplug crc32c_generic
+[  676.565276] CPU: 0 PID: 0 Comm: swapper/0 Not tainted 5.4.28 #0
+[  676.565286] NIP:  c047fde0 LR: c047fd94 CTR: 00000000
+[  676.565297] REGS: eddff6f8 TRAP: 0700   Not tainted  (5.4.28)
+[  676.565305] MSR:  00029000 <CE,EE,ME>  CR: 24828428  XER: 00000000
+[  676.565327] 
+[  676.565327] GPR00: c047fd94 eddff7b0 c0887760 00000000 00000800 00000010 eee1d078 eee1d07c 
+[  676.565327] GPR08: 00000000 ffff0800 0000008e 00000068 88822424 100382cc eef32728 c08c0000 
+[  676.565327] GPR16: 00000f00 00000064 eee3a000 ee49a300 c5285880 eddff7b8 eee1d000 00000170 
+[  676.565327] GPR24: 00000000 eddff7b8 00000000 00000005 efa2b600 00000000 eee1d000 ee400540 
+[  676.565417] NIP [c047fde0] __build_packet_message.isra.17+0x85c/0x8c8
+[  676.565429] LR [c047fd94] __build_packet_message.isra.17+0x810/0x8c8
+[  676.565437] Call Trace:
+[  676.565449] [eddff7b0] [c047fd94] __build_packet_message.isra.17+0x810/0x8c8 (unreliable)
+[  676.565465] [eddff830] [c0480a60] nfulnl_log_packet+0x2b0/0x528
+[  676.565479] [eddff8a0] [c047c71c] nf_log_packet+0x114/0x260
+[  676.565509] [eddff970] [c04a01e0] nft_log_eval+0x5c/0x6c
+[  676.565523] [eddff980] [c0481d94] nft_do_chain+0xfc/0x4cc
+[  676.565537] [eddffad0] [c0492780] nft_do_chain_bridge+0x21c/0x248
+[  676.565561] [eddffb40] [c05b0f40] br_handle_frame+0x1e8/0x750
+[  676.565576] [eddffb90] [c0415c60] __netif_receive_skb_core+0x288/0x1088
+[  676.565590] [eddffc20] [c0416a88] __netif_receive_skb_one_core+0x28/0x60
+[  676.565603] [eddffc40] [c0416ce0] netif_receive_skb_internal+0x8c/0x20c
+[  676.565617] [eddffc70] [c0416ebc] netif_receive_skb+0x5c/0x264
+[  676.566109] [eddffc90] [f1b86968] ieee80211_deliver_skb+0x2a4/0x364 [mac80211]
+[  676.566281] [eddffcd0] [f1b87990] ieee80211_rx_handlers+0xa94/0x2504 [mac80211]
+[  676.566453] [eddffd60] [f1b89b08] ieee80211_prepare_and_rx_handle+0x39c/0x1438 [mac80211]
+[  676.566637] [eddffde0] [f1b8b78c] ieee80211_rx_napi+0xbe8/0xc0c [mac80211]
+[  676.566694] [eddffe70] [f162f1d4] ath_rx_tasklet+0x8b0/0xe3c [ath9k]
+[  676.566716] [eddfff20] [f162c4b0] ath9k_tasklet+0x13c/0x2bc [ath9k]
+[  676.566747] [eddfff50] [c003be40] tasklet_action_common.isra.15+0x80/0x134
+[  676.566771] [eddfff80] [c05f59f4] __do_softirq+0x1ec/0x490
+[  676.566785] [eddfffe0] [c003bbd4] irq_exit+0xec/0xf0
+[  676.566800] [eddffff0] [c000ee40] call_do_irq+0x20/0x38
+[  676.566821] [c08d3e88] [c0006d0c] do_IRQ+0x78/0xc8
+[  676.566840] [c08d3ea8] [c0011594] ret_from_except+0x0/0x18
+[  676.566860] --- interrupt: 501 at arch_cpu_idle+0x24/0x84
+[  676.566860]     LR = arch_cpu_idle+0x24/0x84
+[  676.566872] [c08d3f70] [00000001] 0x1 (unreliable)
+[  676.566904] [c08d3f80] [c0069918] do_idle+0xf8/0x148
+[  676.566919] [c08d3fa0] [c0069bb0] cpu_startup_entry+0x24/0x2c
+[  676.566940] [c08d3fb0] [c0838c28] start_kernel+0x46c/0x480
+[  676.566953] [c08d3ff0] [c00003d0] set_ivor+0x13c/0x178
+[  676.566964] Instruction dump:
+[  676.566977] 3c60c07f 39200001 38a582b0 38800122 3863ac00 99390005 4bc063a1 4bfffd10 
+[  676.567004] a09c0090 6c89ffff 2f8988f5 419eff34 <0fe00000> 3d20c08c 39295932 89090001 
+[  676.567032] irq event stamp: 3909357
+[  676.567047] hardirqs last  enabled at (3909356): [<c003b7b4>] __local_bh_enable_ip+0x88/0x144
+[  676.567060] hardirqs last disabled at (3909357): [<c0011170>] reenable_mmu+0x1c/0x78
+[  676.567074] softirqs last  enabled at (3909332): [<c003bac0>] irq_enter+0x68/0x90
+[  676.567087] softirqs last disabled at (3909333): [<c003bbd4>] irq_exit+0xec/0xf0
+[  676.567096] ---[ end trace 9b8c75f6591a52cf ]---
+[  676.567219] skb->protocol = 0x0800
+
+
+
+--- a/net/netfilter/nfnetlink_log.c
++++ b/net/netfilter/nfnetlink_log.c
+@@ -406,9 +406,17 @@ static u32 nfulnl_get_bridge_size(const
+ 
+ static int nfulnl_put_bridge(struct nfulnl_instance *inst, const struct sk_buff *skb)
+ {
++	WARN_ON_ONCE(!skb_mac_header_was_set(skb));
++
+ 	if (!skb_mac_header_was_set(skb))
+ 		return 0;
+ 
++	if (!skb_vlan_tag_present(skb) &&
++	    ntohs(skb->protocol) != 0x88F5) {
++		WARN_ON_ONCE(1);
++		printk_once("skb->protocol = 0x%.4X\n", ntohs(skb->protocol));
++	}
++
+ 	if (skb_vlan_tag_present(skb)) {
+ 		struct nlattr *nest;
+ 

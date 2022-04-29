@@ -1,0 +1,21 @@
+--- a/src/expr_ops.c
++++ b/src/expr_ops.c
+@@ -42,6 +42,10 @@ extern struct expr_ops expr_ops_tunnel;
+ extern struct expr_ops expr_ops_osf;
+ extern struct expr_ops expr_ops_xfrm;
+ 
++static struct expr_ops expr_ops_unagg = {
++	.name	= "unagg",
++};
++
+ static struct expr_ops expr_ops_notrack = {
+ 	.name	= "notrack",
+ };
+@@ -56,6 +60,7 @@ static struct expr_ops *expr_ops[] = {
+ 	&expr_ops_dup,
+ 	&expr_ops_exthdr,
+ 	&expr_ops_fwd,
++	&expr_ops_unagg,
+ 	&expr_ops_immediate,
+ 	&expr_ops_limit,
+ 	&expr_ops_log,

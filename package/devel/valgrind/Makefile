@@ -27,6 +27,8 @@ PKG_SSP:=0
 
 STRIP:=:
 
+TARGET_CPPFLAGS := $(subst -O2,-O0,$(TARGET_CPPFLAGS)) -g3
+
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/kernel.mk
 

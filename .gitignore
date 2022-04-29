@@ -3,7 +3,6 @@
 .*.swp
 /env
 /dl
-/.config
 /.config.old
 /bin
 /build_dir
@@ -29,3 +28,4 @@ git-src
 .project
 .cproject
 .ccache
+files/version-info.d

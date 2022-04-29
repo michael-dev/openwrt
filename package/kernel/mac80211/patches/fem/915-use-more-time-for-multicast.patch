@@ -1,0 +1,272 @@
+Regarding delivery of buffered multicast frame
+Let dtim_period be 1.
+
+old:
+
+|<----- BSS Interval ----------------------------------->|
+| BSS 1            | BSS 2            |  empty Slots     |
+
+i.e. ATH_BCBUF num equally-sized slots
+
+new:
+
+|<----- BSS Interval ----------------------------------->|
+| BSS 1  | all-BSS | BSS 2  | all-BSS                    |
+| Beacon | pakets  | Beacon | packets                    |
+
+i.e. beacons are still send at the beginning of ATH_BCBUF num equally sized
+slots. But buffered packets are send in a round-robin fashin from all bss,
+excluding those bss were stas are not listening (i.e. last dtim did not
+indicate available multicast packets or more-data flag was reset)
+
+(C) 2014, Michael Braun <michael-dev@fami-braun.de>
+
+--- a/drivers/net/wireless/ath/ath9k/ath9k.h
++++ b/drivers/net/wireless/ath/ath9k/ath9k.h
+@@ -599,7 +599,7 @@ void ath_assign_seq(struct ath_common *c
+ int ath_tx_start(struct ieee80211_hw *hw, struct sk_buff *skb,
+ 		 struct ath_tx_control *txctl);
+ void ath_tx_cabq(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+-		 struct sk_buff *skb);
++		 const int slotwidth);
+ void ath_tx_tasklet(struct ath_softc *sc);
+ void ath_tx_edma_tasklet(struct ath_softc *sc);
+ int ath_tx_aggr_start(struct ath_softc *sc, struct ieee80211_sta *sta,
+@@ -635,6 +635,7 @@ struct ath_vif {
+ 	struct ieee80211_vif *vif;
+ 	struct ath_node mcast_node;
+ 	int av_bslot;
++	bool multicastWakeup;
+ 	__le64 tsf_adjust; /* TSF adjustment for staggered beacons */
+ 	struct ath_buf *av_bcbuf;
+ 	struct ath_chanctx *chanctx;
+--- a/drivers/net/wireless/ath/ath9k/beacon.c
++++ b/drivers/net/wireless/ath/ath9k/beacon.c
+@@ -110,7 +110,8 @@ static void ath9k_beacon_setup(struct at
+ }
+ 
+ static struct ath_buf *ath9k_beacon_generate(struct ieee80211_hw *hw,
+-					     struct ieee80211_vif *vif)
++					     struct ieee80211_vif *vif,
++					     const int slotwidth)
+ {
+ 	struct ath_softc *sc = hw->priv;
+ 	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+@@ -162,8 +163,6 @@ static struct ath_buf *ath9k_beacon_gene
+ 		return NULL;
+ 	}
+ 
+-	skb = ieee80211_get_buffered_bc(hw, vif);
+-
+ 	/*
+ 	 * if the CABQ traffic from previous DTIM is pending and the current
+ 	 *  beacon is also a DTIM.
+@@ -176,18 +175,9 @@ static struct ath_buf *ath9k_beacon_gene
+ 	cabq_depth = cabq->axq_depth;
+ 	spin_unlock_bh(&cabq->axq_lock);
+ 
+-	if (skb && cabq_depth) {
+-		if (sc->cur_chan->nvifs > 1) {
+-			ath_dbg(common, BEACON,
+-				"Flushing previous cabq traffic\n");
+-			ath_draintxq(sc, cabq);
+-		}
+-	}
+-
+ 	ath9k_beacon_setup(sc, vif, bf, info->control.rates[0].idx);
+ 
+-	if (skb)
+-		ath_tx_cabq(hw, vif, skb);
++	ath_tx_cabq(hw, vif, slotwidth);
+ 
+ 	return bf;
+ }
+@@ -198,6 +188,7 @@ void ath9k_beacon_assign_slot(struct ath
+ 	struct ath_vif *avp = (void *)vif->drv_priv;
+ 	int slot;
+ 
++	avp->multicastWakeup = 0;
+ 	avp->av_bcbuf = list_first_entry(&sc->beacon.bbuf, struct ath_buf, list);
+ 	list_del(&avp->av_bcbuf->list);
+ 
+@@ -394,6 +385,8 @@ void ath9k_beacon_tasklet(struct tasklet
+ 	struct ieee80211_vif *vif;
+ 	bool edma = !!(ah->caps.hw_caps & ATH9K_HW_CAP_EDMA);
+ 	int slot;
++	int slotwidth;
++	int i;
+ 
+ 	if (test_bit(ATH_OP_HW_RESET, &common->op_flags)) {
+ 		ath_dbg(common, RESET,
+@@ -401,6 +394,16 @@ void ath9k_beacon_tasklet(struct tasklet
+ 		return;
+ 	}
+ 
++	/* Check if slot is occupied. Only check for stuck beacons
++	 * if slot is occupied to allow a bss to push out buffered
++	 * multicasts for more than one slot
++	 */
++	slot = ath9k_beacon_choose_slot(sc);
++	vif = sc->beacon.bslot[slot];
++
++	if (!vif || !vif->bss_conf.enable_beacon)
++		return;
++	
+ 	/*
+ 	 * Check if the previous beacon has gone out.  If
+ 	 * not don't try to post another, skip this period
+@@ -438,9 +441,6 @@ void ath9k_beacon_tasklet(struct tasklet
+ 		return;
+ 	}
+ 
+-	slot = ath9k_beacon_choose_slot(sc);
+-	vif = sc->beacon.bslot[slot];
+-
+ 	/* EDMA devices check that in the tx completion function. */
+ 	if (!edma) {
+ 		if (ath9k_is_chanctx_enabled()) {
+@@ -452,14 +452,22 @@ void ath9k_beacon_tasklet(struct tasklet
+ 			return;
+ 	}
+ 
+-	if (!vif || !vif->bss_conf.enable_beacon)
+-		return;
+-
+ 	if (ath9k_is_chanctx_enabled()) {
+ 		ath_chanctx_event(sc, vif, ATH_CHANCTX_EVENT_BEACON_PREPARE);
+ 	}
+ 
+-	bf = ath9k_beacon_generate(sc->hw, vif);
++	/* calculate width of current slot - i.e. the number of slots following this slot that are unoccupied */
++	slotwidth = 1;
++	for (i = slot + 1; i < ATH_BCBUF && !sc->beacon.bslot[i]; i++) {
++		slotwidth++;
++	}
++	if (i == ATH_BCBUF) {
++		for (i = 0; i < slot && !sc->beacon.bslot[i]; i++) {
++			slotwidth++;
++		}
++	}
++ 
++	bf = ath9k_beacon_generate(sc->hw, vif, slotwidth);
+ 
+ 	if (sc->beacon.bmisscnt != 0) {
+ 		ath_dbg(common, BSTUCK, "resume beacon xmit after %u misses\n",
+--- a/drivers/net/wireless/ath/ath9k/xmit.c
++++ b/drivers/net/wireless/ath/ath9k/xmit.c
+@@ -2338,9 +2338,10 @@ out:
+ }
+ 
+ void ath_tx_cabq(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+-		 struct sk_buff *skb)
++		 const int slotwidth)
+ {
+ 	struct ath_softc *sc = hw->priv;
++	struct ath_common *common = ath9k_hw_common(sc->sc_ah);
+ 	struct ath_tx_control txctl = {
+ 		.txq = sc->beacon.cabq
+ 	};
+@@ -2350,12 +2351,53 @@ void ath_tx_cabq(struct ieee80211_hw *hw
+ 	LIST_HEAD(bf_q);
+ 	int duration = 0;
+ 	int max_duration;
++	int slot, firstslot;
++	int skippedSlots = 0;
++	struct sk_buff *skb;
++	struct ath_buf *lastbf[ATH_BCBUF] = {};
+ 
+ 	max_duration =
+ 		sc->cur_chan->beacon.beacon_interval * 1000 *
++		slotwidth *
+ 		sc->cur_chan->beacon.dtim_period / ATH_BCBUF;
+ 
+-	do {
++	skb = ieee80211_get_buffered_bc(hw, vif);
++	if (skb) {
++		((struct ath_vif *) vif->drv_priv)->multicastWakeup = 1;
++	}
++
++	/* loop through all slots again and again until either max_duration is reached or all slots have no more packets */
++	firstslot = ((struct ath_vif *) vif->drv_priv)->av_bslot;
++	for (slot = firstslot; skippedSlots < ATH_BCBUF;
++	     slot = ((slot >= ATH_BCBUF - 1) ? 0 : (slot + 1))) {
++		if (slot == firstslot)
++			/* when all ATH_BCBUF many slots are empty, skippedSlots will reach ATH_BCBUF before slot=firstslot is reached again */
++			skippedSlots = 0;
++
++		vif = sc->beacon.bslot[slot];
++		if (!vif || !(((struct ath_vif *) vif->drv_priv)->multicastWakeup)) {
++			/* there is no vif for this slot or this bss is not woken up */
++			skippedSlots++;
++			continue;
++		};
++
++		if (!skb) /* keep first skb */
++			skb = ieee80211_get_buffered_bc(hw, vif);
++
++		if (!skb) {
++			/* this slot has no more entries */
++			if (lastbf[slot]) {
++				ath9k_set_moredata(sc, lastbf[slot], false);
++				lastbf[slot] = NULL;
++			}
++			((struct ath_vif *) vif->drv_priv)->multicastWakeup = 0;
++			skippedSlots++;
++			continue;
++		} else {
++			skippedSlots = 0;
++		}
++
++		ath_dbg(common, XMIT, "TX see skb in %s:%d for slot %d skb: %p\n", __func__, __LINE__, slot, skb);
+ 		struct ath_frame_info *fi = get_frame_info(skb);
+ 
+ 		if (ath_tx_prepare(hw, skb, &txctl))
+@@ -2365,6 +2407,8 @@ void ath_tx_cabq(struct ieee80211_hw *hw
+ 		if (!bf)
+ 			break;
+ 
++		lastbf[slot] = bf; // this entry will not be freed until header is unset
++
+ 		bf->bf_lastbf = bf;
+ 		ath_set_rates(vif, NULL, bf);
+ 		ath_buf_set_rate(sc, bf, &info, fi->framelen, false);
+@@ -2377,19 +2421,25 @@ void ath_tx_cabq(struct ieee80211_hw *hw
+ 		skb = NULL;
+ 
+ 		if (duration > max_duration)
++		{
++			ath_dbg(common, XMIT, "TX max_duration %d < duration %d reached\n", max_duration, duration);
+ 			break;
+-
+-		skb = ieee80211_get_buffered_bc(hw, vif);
+-	} while(skb);
++		} else {
++			ath_dbg(common, XMIT, "TX duration %d < max_duration %d reached\n", duration, max_duration);
++		}
++	};
+ 
+ 	if (skb)
++	{
++		ath_dbg(common, XMIT, "TX drop skb in %s:%d: skb: %p\n", __func__, __LINE__, skb);
+ 		ieee80211_free_txskb(hw, skb);
++		skb = NULL;
++	}
+ 
+ 	if (list_empty(&bf_q))
+ 		return;
+ 
+-	bf = list_last_entry(&bf_q, struct ath_buf, list);
+-	ath9k_set_moredata(sc, bf, false);
++	/* do not unset moredata as it will be unset only iff there are not more packets for that bss */
+ 
+ 	bf = list_first_entry(&bf_q, struct ath_buf, list);
+ 	ath_txq_lock(sc, txctl.txq);
+@@ -2413,7 +2463,7 @@ static void ath_tx_complete(struct ath_s
+ 	int padpos, padsize;
+ 	unsigned long flags;
+ 
+-	ath_dbg(common, XMIT, "TX complete: skb: %p\n", skb);
++	ath_dbg(common, XMIT, "TX complete: skb: %p error:%d\n", skb, !!(tx_flags & ATH_TX_ERROR));
+ 
+ 	if (sc->sc_ah->caldata)
+ 		set_bit(PAPRD_PACKET_SENT, &sc->sc_ah->caldata->cal_flags);

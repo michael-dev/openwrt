@@ -1,0 +1,233 @@
+--- a/drivers/net/ethernet/freescale/gianfar.c
++++ b/drivers/net/ethernet/freescale/gianfar.c
+@@ -1240,11 +1240,13 @@ static bool gfar_new_page(struct gfar_pr
+ 	dma_addr_t addr;
+ 
+ 	page = dev_alloc_pages(GFAR_RXB_PAGE_ORDER);
++	WARN_ON(!page);
+ 	if (unlikely(!page))
+ 		return false;
+ 
+ 	addr = dma_map_page(rxq->dev, page, 0, GFAR_RXB_PAGE_SIZE, DMA_FROM_DEVICE);
+ 	if (unlikely(dma_mapping_error(rxq->dev, addr))) {
++		WARN_ON_ONCE(1);
+ 		__free_pages(page, GFAR_RXB_PAGE_ORDER);
+ 
+ 		return false;
+@@ -2375,28 +2377,119 @@ static irqreturn_t gfar_transmit(int irq
+ 	return IRQ_HANDLED;
+ }
+ 
++
++#define GFAR_TRACE 0
++#define GFAR_DEBUG 0
++
++#if GFAR_DEBUG > 0
++
++#define NUMDEBUG 1000
++static int debugidx = 0;
++struct gianfar_debug {
++	u32 lstatus;
++	bool first;
++	bool filled;
++	unsigned int skb_len;
++	unsigned int skb_data_len;
++	void *skb_ptr; // invalid, just for reference
++	void *page;
++	unsigned int page_offset;
++};
++static struct gianfar_debug gianfar_debug[NUMDEBUG] = {};
++
++static void gfar_print_debug(void) {
++	unsigned int i;
++
++	printk(KERN_CRIT "gianfar debug GFAR_RXB_FRAG_SIZE %u GFAR_RXB_SIZE %u GFAR_SKBFRAG_SIZE %u GFAR_RXB_PAGE_ORDER %u GFAR_RXB_PAGE_SIZE %lx (%lu) GFAR_RXB_TRUESIZE %lx (%lu)",
++			 GFAR_RXB_FRAG_SIZE, GFAR_RXB_SIZE, GFAR_SKBFRAG_SIZE, GFAR_RXB_PAGE_ORDER, GFAR_RXB_PAGE_SIZE, GFAR_RXB_PAGE_SIZE, GFAR_RXB_TRUESIZE, GFAR_RXB_TRUESIZE);
++
++	for (i = 0; i < NUMDEBUG; i++) {
++		unsigned int j = (debugidx + NUMDEBUG - i) % NUMDEBUG;
++		if (!gianfar_debug[j].filled) continue;
++
++		printk(KERN_CRIT "gianfar debug[-%d] is lstatus=%x, size=%d, first=%d, flags=%s%s%s%s%s%s%s%s%s%s%s%s%s%s%s, skb->len=%u, skb->data_len=%u, skb=%p j=%u page=%p page_offset=%x (%u)",
++			       	i, gianfar_debug[j].lstatus, (int) (gianfar_debug[j].lstatus & BD_LENGTH_MASK),
++				gianfar_debug[j].first,
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_EMPTY)) ? "EMPTY " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_RO1)) ? "RO1 " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_WRAP)) ? "WRAP " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_INTERRUPT)) ? "INTERRUPT " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_LAST)) ? "LAST " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_FIRST)) ? "FIRST " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_MISS)) ? "MISS " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_BROADCAST)) ? "BROADCAST " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_MULTICAST)) ? "MULTICAST " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_LARGE)) ? "LARGE " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_NONOCTET)) ? "NONOCTET " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_SHORT)) ? "SHORT " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_CRCERR)) ? "CRCERR " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_OVERRUN)) ? "OVERRUN " : "",
++				(gianfar_debug[j].lstatus & BD_LFLAG(RXBD_TRUNCATED)) ? "TRUNCATED " : "",
++				gianfar_debug[j].skb_len,
++				gianfar_debug[j].skb_data_len,
++				gianfar_debug[j].skb_ptr,
++				j,
++				gianfar_debug[j].page,
++				gianfar_debug[j].page_offset,
++				gianfar_debug[j].page_offset);
++		gianfar_debug[j].filled = 0;
++	}
++}
++
++#define gfar_add_debug() { \
++	debugidx = (debugidx + 1) % NUMDEBUG; \
++	gianfar_debug[debugidx].lstatus = lstatus; \
++	gianfar_debug[debugidx].first = first; \
++	gianfar_debug[debugidx].filled = 1; \
++	gianfar_debug[debugidx].skb_len = skb->len; \
++	gianfar_debug[debugidx].skb_data_len = skb->data_len; \
++	gianfar_debug[debugidx].skb_ptr = skb; \
++	gianfar_debug[debugidx].page_offset = rxb->page_offset; \
++	gianfar_debug[debugidx].page = rxb->page; \
++}
++
++#endif /* GFAR_DEBUG > 0 */
++
+ static bool gfar_add_rx_frag(struct gfar_rx_buff *rxb, u32 lstatus,
+ 			     struct sk_buff *skb, bool first)
+ {
+ 	int size = lstatus & BD_LENGTH_MASK;
+ 	struct page *page = rxb->page;
+ 
++	BUG_ON(skb->len < skb->data_len);
++
++#if GFAR_DEBUG > 0
++	gfar_add_debug();
++	if (GFAR_TRACE && debugidx == 0)
++		gfar_print_debug();
++#endif
++
+ 	if (likely(first)) {
++		/* data was added by build_skb in gfar_get_next_rxbuf */
+ 		skb_put(skb, size);
+ 	} else {
+ 		/* the last fragments' length contains the full frame length */
+ 		if (lstatus & BD_LFLAG(RXBD_LAST))
+ 			size -= skb->len;
+ 
+-		WARN(size < 0, "gianfar: rx fragment size underflow");
+-		if (size < 0)
+-			return false;
++		WARN(size == 0, "gianfar: last fragment of size zero");
++		WARN(size < 0, "gianfar: last fragment of negative size");
++
++#if GFAR_DEBUG > 0
++		if (size <= 0)
++			gfar_print_debug();
++#endif
++
++		if (size <= 0)
++			return false; // is this correct or does it leak memory?
+ 
+ 		skb_add_rx_frag(skb, skb_shinfo(skb)->nr_frags, page,
+ 				rxb->page_offset + RXBUF_ALIGNMENT,
+ 				size, GFAR_RXB_TRUESIZE);
+ 	}
+ 
++	BUG_ON(skb->len < skb->data_len);
++
+ 	/* try reuse page */
+ 	if (unlikely(page_count(page) != 1 || page_is_pfmemalloc(page)))
+ 		return false;
+@@ -2464,6 +2557,8 @@ static struct sk_buff *gfar_get_next_rxb
+ 	/* clear rxb content */
+ 	rxb->page = NULL;
+ 
++	BUG_ON(skb->len < skb->data_len);
++
+ 	return skb;
+ }
+ 
+@@ -2481,7 +2576,7 @@ static inline void gfar_rx_checksum(stru
+ }
+ 
+ /* gfar_process_frame() -- handle one incoming packet if skb isn't NULL. */
+-static void gfar_process_frame(struct net_device *ndev, struct sk_buff *skb)
++static int gfar_process_frame(struct net_device *ndev, struct sk_buff *skb)
+ {
+ 	struct gfar_private *priv = netdev_priv(ndev);
+ 	struct rxfcb *fcb = NULL;
+@@ -2489,9 +2584,16 @@ static void gfar_process_frame(struct ne
+ 	/* fcb is at the beginning if exists */
+ 	fcb = (struct rxfcb *)skb->data;
+ 
++	BUG_ON(skb->len < skb->data_len);
++
+ 	/* Remove the FCB from the skb
+ 	 * Remove the padded bytes, if there are any
+ 	 */
++	if (unlikely(priv->uses_rxfcb &&
++	    skb_headlen(skb) < GMAC_FCB_LEN)) {
++		WARN_ON_ONCE(1);
++		return 1;
++	}
+ 	if (priv->uses_rxfcb)
+ 		skb_pull(skb, GMAC_FCB_LEN);
+ 
+@@ -2504,12 +2606,26 @@ static void gfar_process_frame(struct ne
+ 		shhwtstamps->hwtstamp = ns_to_ktime(be64_to_cpu(*ns));
+ 	}
+ 
++	if (unlikely(priv->padding &&
++	    skb_headlen(skb) < priv->padding)) {
++		WARN_ON_ONCE(1);
++		return 1;
++	}
+ 	if (priv->padding)
+ 		skb_pull(skb, priv->padding);
+ 
+ 	/* Trim off the FCS */
++	if (unlikely(skb->len < ETH_FCS_LEN)) {
++		WARN_ON_ONCE(1);
++		return 1;
++	}
+ 	pskb_trim(skb, skb->len - ETH_FCS_LEN);
+ 
++	if (unlikely(skb->len < ETH_HLEN)) {
++		WARN_ON_ONCE(1);
++		return 1;
++	}
++
+ 	if (ndev->features & NETIF_F_RXCSUM)
+ 		gfar_rx_checksum(skb, fcb);
+ 
+@@ -2521,6 +2637,8 @@ static void gfar_process_frame(struct ne
+ 	    be16_to_cpu(fcb->flags) & RXFCB_VLN)
+ 		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021Q),
+ 				       be16_to_cpu(fcb->vlctl));
++
++	return 0;
+ }
+ 
+ /* gfar_clean_rx_ring() -- Processes each frame in the rx ring
+@@ -2557,6 +2675,7 @@ static int gfar_clean_rx_ring(struct gfa
+ 		/* lost RXBD_LAST descriptor due to overrun */
+ 		if (skb &&
+ 		    (lstatus & BD_LFLAG(RXBD_FIRST))) {
++			WARN(1, "gianfar: rx buffer overrun skb incomplete");
+ 			/* discard faulty buffer */
+ 			dev_kfree_skb(skb);
+ 			skb = NULL;
+@@ -2595,7 +2714,13 @@ static int gfar_clean_rx_ring(struct gfa
+ 			continue;
+ 		}
+ 
+-		gfar_process_frame(ndev, skb);
++		if (unlikely(gfar_process_frame(ndev, skb))) {
++			/* discard faulty buffer */
++			dev_kfree_skb(skb);
++			skb = NULL;
++			rx_queue->stats.rx_dropped++;
++			continue;
++		}
+ 
+ 		/* Increment the number of packets */
+ 		total_pkts++;

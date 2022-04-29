@@ -1,0 +1,179 @@
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -4120,18 +4120,24 @@ static int nl80211_set_key(struct sk_buf
+ 	struct net_device *dev = info->user_ptr[1];
+ 
+ 	err = nl80211_parse_key(info, &key);
+-	if (err)
++	if (err) {
++		printk(KERN_CRIT "%s: nl80211_parse_key failed with %d", dev->name, err);
+ 		return err;
++	}
+ 
+-	if (key.idx < 0)
++	if (key.idx < 0) {
++		printk(KERN_CRIT "%s: refuse due to negative key index %d", dev->name, key.idx);
+ 		return -EINVAL;
++	}
+ 
+ 	/* Only support setting default key and
+ 	 * Extended Key ID action NL80211_KEY_SET_TX.
+ 	 */
+ 	if (!key.def && !key.defmgmt && !key.defbeacon &&
+-	    !(key.p.mode == NL80211_KEY_SET_TX))
++	    !(key.p.mode == NL80211_KEY_SET_TX)) {
++		printk(KERN_CRIT "%s: refuse because not default key %d %d %d", dev->name, key.def, key.defmgmt, key.p.mode);
+ 		return -EINVAL;
++	}
+ 
+ 	wdev_lock(dev->ieee80211_ptr);
+ 
+@@ -4142,20 +4148,25 @@ static int nl80211_set_key(struct sk_buf
+ 		}
+ 
+ 		err = nl80211_key_allowed(dev->ieee80211_ptr);
+-		if (err)
++		if (err) {
++			printk(KERN_CRIT "%s: nl80211_key_allowed failed with %d", dev->name, err);
+ 			goto out;
++		}
+ 
+ 		err = rdev_set_default_key(rdev, dev, key.idx,
+ 						 key.def_uni, key.def_multi);
+ 
+-		if (err)
++		if (err) {
++			printk(KERN_CRIT "%s: rdev_set_default_key failed with %d", dev->name, err);
+ 			goto out;
++		}
+ 
+ #ifdef CPTCFG_CFG80211_WEXT
+ 		dev->ieee80211_ptr->wext.default_key = key.idx;
+ #endif
+ 	} else if (key.defmgmt) {
+ 		if (key.def_uni || !key.def_multi) {
++			printk(KERN_CRIT "%s: refuse because not default key II %d %d", dev->name, key.def_uni, key.def_multi);
+ 			err = -EINVAL;
+ 			goto out;
+ 		}
+@@ -4166,12 +4177,16 @@ static int nl80211_set_key(struct sk_buf
+ 		}
+ 
+ 		err = nl80211_key_allowed(dev->ieee80211_ptr);
+-		if (err)
++		if (err) {
++			printk(KERN_CRIT "%s: nl80211_key_allowed failed with %d", dev->name, err);
+ 			goto out;
++		}
+ 
+ 		err = rdev_set_default_mgmt_key(rdev, dev, key.idx);
+-		if (err)
++		if (err) {
++			printk(KERN_CRIT "%s: rdev_set_default_mgmt_key failed with %d", dev->name, err);
+ 			goto out;
++		}
+ 
+ #ifdef CPTCFG_CFG80211_WEXT
+ 		dev->ieee80211_ptr->wext.default_mgmt_key = key.idx;
+@@ -4216,6 +4231,9 @@ static int nl80211_set_key(struct sk_buf
+  out:
+ 	wdev_unlock(dev->ieee80211_ptr);
+ 
++	if (err)
++		printk(KERN_CRIT "%s: set_key fails with %d", dev->name, err);
++
+ 	return err;
+ }
+ 
+@@ -4228,10 +4246,13 @@ static int nl80211_new_key(struct sk_buf
+ 	const u8 *mac_addr = NULL;
+ 
+ 	err = nl80211_parse_key(info, &key);
+-	if (err)
++	if (err) {
++		printk(KERN_CRIT "%s: nl80211_parse_key failed with %d", dev->name, err);
+ 		return err;
++	}
+ 
+ 	if (!key.p.key) {
++		printk(KERN_CRIT "%s: set_key fails due to !key.p.key", dev->name);
+ 		GENL_SET_ERR_MSG(info, "no key");
+ 		return -EINVAL;
+ 	}
+@@ -4249,6 +4270,7 @@ static int nl80211_new_key(struct sk_buf
+ 	/* for now */
+ 	if (key.type != NL80211_KEYTYPE_PAIRWISE &&
+ 	    key.type != NL80211_KEYTYPE_GROUP) {
++		printk(KERN_CRIT "%s: key.type ( %d ) != NL80211_KEYTYPE_PAIRWISE (%d), NL80211_KEYTYPE_GROUP (%d)", dev->name, key.type, NL80211_KEYTYPE_PAIRWISE, NL80211_KEYTYPE_GROUP);
+ 		GENL_SET_ERR_MSG(info, "key type not pairwise or group");
+ 		return -EINVAL;
+ 	}
+@@ -4263,6 +4285,7 @@ static int nl80211_new_key(struct sk_buf
+ 	if (cfg80211_validate_key_settings(rdev, &key.p, key.idx,
+ 					   key.type == NL80211_KEYTYPE_PAIRWISE,
+ 					   mac_addr)) {
++		printk(KERN_CRIT "%s: cfg80211_validate_key_settings failed", dev->name);
+ 		GENL_SET_ERR_MSG(info, "key setting validation failed");
+ 		return -EINVAL;
+ 	}
+@@ -4271,15 +4294,22 @@ static int nl80211_new_key(struct sk_buf
+ 	err = nl80211_key_allowed(dev->ieee80211_ptr);
+ 	if (err)
+ 		GENL_SET_ERR_MSG(info, "key not allowed");
++	if (err)
++		printk(KERN_CRIT "%s: nl80211_key_allowed failed with %d", dev->name, err);
+ 	if (!err) {
+ 		err = rdev_add_key(rdev, dev, key.idx,
+ 				   key.type == NL80211_KEYTYPE_PAIRWISE,
+ 				    mac_addr, &key.p);
+ 		if (err)
+ 			GENL_SET_ERR_MSG(info, "key addition failed");
++		if (err)
++			printk(KERN_CRIT "%s: rdev_add_key failed with %d", dev->name, err);
+ 	}
+ 	wdev_unlock(dev->ieee80211_ptr);
+ 
++	if (err)
++		printk(KERN_CRIT "%s: new_key failing with %d", dev->name, err);
++
+ 	return err;
+ }
+ 
+--- a/net/mac80211/cfg.c
++++ b/net/mac80211/cfg.c
+@@ -422,8 +422,10 @@ static int ieee80211_add_key(struct wiph
+ 	key = ieee80211_key_alloc(params->cipher, key_idx, params->key_len,
+ 				  params->key, params->seq_len, params->seq,
+ 				  cs);
+-	if (IS_ERR(key))
++	if (IS_ERR(key)) {
++		printk(KERN_CRIT "%s: ieee80211_key_alloc failed with %d", dev->name, (int) PTR_ERR(key));
+ 		return PTR_ERR(key);
++	}
+ 
+ 	if (pairwise)
+ 		key->conf.flags |= IEEE80211_KEY_FLAG_PAIRWISE;
+@@ -446,6 +448,7 @@ static int ieee80211_add_key(struct wiph
+ 		 *       add it to the device after the station.
+ 		 */
+ 		if (!sta || !test_sta_flag(sta, WLAN_STA_ASSOC)) {
++			WARN_ON(1);
+ 			ieee80211_key_free_unused(key);
+ 			err = -ENOENT;
+ 			goto out_unlock;
+@@ -491,9 +494,15 @@ static int ieee80211_add_key(struct wiph
+ 
+ 	err = ieee80211_key_link(key, sdata, sta);
+ 
++	if (err)
++		printk(KERN_CRIT "%s: ieee80211_key_link failed with %d", dev->name, err);
++
+  out_unlock:
+ 	mutex_unlock(&local->sta_mtx);
+ 
++	if (err)
++		printk(KERN_CRIT "%s: ieee80211_add_key failing with %d", dev->name, err);
++
+ 	return err;
+ }
+ 

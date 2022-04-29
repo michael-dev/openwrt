@@ -1,0 +1,36 @@
+Try to fix 
+
+ WARNING: could not set linux,initrd-end FDT_ERR_NOSPACE
+
+diff a/kexec/arch/ppc/fixup_dtb.c b/kexec/arch/ppc/fixup_dtb.c
+--- a/kexec/arch/ppc/fixup_dtb.c
++++ b/kexec/arch/ppc/fixup_dtb.c
+@@ -305,9 +305,6 @@ static void fixup_initrd(char *blob_buf)
+ 		return;
+ 	}
+ 
+-	fdt_delprop(blob_buf, nodeoffset, "linux,initrd-start");
+-	fdt_delprop(blob_buf, nodeoffset, "linux,initrd-end");
+-
+ 	if ((reuse_initrd || ramdisk) &&
+ 	   ((ramdisk_base != 0) && (ramdisk_size != 0))) {
+ 		tmp = ramdisk_base;
+@@ -328,6 +325,9 @@ static void fixup_initrd(char *blob_buf)
+ 				fdt_strerror(err));
+ 				return;
+ 		}
++	} else {
++		fdt_delprop(blob_buf, nodeoffset, "linux,initrd-start");
++		fdt_delprop(blob_buf, nodeoffset, "linux,initrd-end");
+ 	}
+ }
+ 
+@@ -356,6 +356,8 @@ char *fixup_dtb_init(struct kexec_info *
+ 	/* info->nr_segments just a guide, will grow by at least EXPAND_GRANULARITY */
+ 	blob_buf = expand_buf(info->nr_segments * sizeof(struct fdt_reserve_entry),
+ 				 blob_buf, blob_size);
++	blob_buf = expand_buf(5 * sizeof(struct fdt_reserve_entry),
++				 blob_buf, blob_size);
+ 
+ 	/* add reserve region for *THIS* fdt */
+ 	*dtb_addr = locate_hole(info, *blob_size, 0,

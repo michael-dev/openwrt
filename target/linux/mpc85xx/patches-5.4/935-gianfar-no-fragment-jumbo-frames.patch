@@ -1,0 +1,65 @@
+--- a/drivers/net/ethernet/freescale/gianfar.c
++++ b/drivers/net/ethernet/freescale/gianfar.c
+@@ -1134,8 +1134,8 @@ static void free_skb_rx_queue(struct gfa
+ 			continue;
+ 
+ 		dma_unmap_page(rx_queue->dev, rxb->dma,
+-			       PAGE_SIZE, DMA_FROM_DEVICE);
+-		__free_page(rxb->page);
++			       GFAR_RXB_PAGE_SIZE, DMA_FROM_DEVICE);
++		__free_pages(rxb->page, GFAR_RXB_PAGE_ORDER);
+ 
+ 		rxb->page = NULL;
+ 	}
+@@ -1239,13 +1239,13 @@ static bool gfar_new_page(struct gfar_pr
+ 	struct page *page;
+ 	dma_addr_t addr;
+ 
+-	page = dev_alloc_page();
++	page = dev_alloc_pages(GFAR_RXB_PAGE_ORDER);
+ 	if (unlikely(!page))
+ 		return false;
+ 
+-	addr = dma_map_page(rxq->dev, page, 0, PAGE_SIZE, DMA_FROM_DEVICE);
++	addr = dma_map_page(rxq->dev, page, 0, GFAR_RXB_PAGE_SIZE, DMA_FROM_DEVICE);
+ 	if (unlikely(dma_mapping_error(rxq->dev, addr))) {
+-		__free_page(page);
++		__free_pages(page, GFAR_RXB_PAGE_ORDER);
+ 
+ 		return false;
+ 	}
+@@ -2458,7 +2458,7 @@ static struct sk_buff *gfar_get_next_rxb
+ 	} else {
+ 		/* page cannot be reused, unmap it */
+ 		dma_unmap_page(rx_queue->dev, rxb->dma,
+-			       PAGE_SIZE, DMA_FROM_DEVICE);
++			       GFAR_RXB_PAGE_SIZE, DMA_FROM_DEVICE);
+ 	}
+ 
+ 	/* clear rxb content */
+@@ -2560,6 +2560,7 @@ static int gfar_clean_rx_ring(struct gfa
+ 			/* discard faulty buffer */
+ 			dev_kfree_skb(skb);
+ 			skb = NULL;
++			rx_queue->stats.rx_dropped++;
+ 
+ 			/* can continue normally */
+ 		}
+--- a/drivers/net/ethernet/freescale/gianfar.h
++++ b/drivers/net/ethernet/freescale/gianfar.h
+@@ -91,10 +91,13 @@ extern const char gfar_driver_version[];
+ #define DEFAULT_LFC_PTVVAL  4
+ 
+ /* prevent fragmenation by HW in DSA environments */
+-#define GFAR_RXB_SIZE roundup(1536 + 8, 64)
++#define GFAR_RXB_FRAG_SIZE 9600 /* this is what we actually want, initially 1536 + 8 */
++#define GFAR_RXB_SIZE roundup(GFAR_RXB_FRAG_SIZE + 8, 64)
+ #define GFAR_SKBFRAG_SIZE (RXBUF_ALIGNMENT + GFAR_RXB_SIZE \
+ 			  + SKB_DATA_ALIGN(sizeof(struct skb_shared_info)))
+-#define GFAR_RXB_TRUESIZE 2048
++#define GFAR_RXB_PAGE_ORDER get_order(2 * GFAR_SKBFRAG_SIZE)
++#define GFAR_RXB_PAGE_SIZE (PAGE_SIZE << GFAR_RXB_PAGE_ORDER)
++#define GFAR_RXB_TRUESIZE (GFAR_RXB_PAGE_SIZE / 2)
+ 
+ #define TX_RING_MOD_MASK(size) (size-1)
+ #define RX_RING_MOD_MASK(size) (size-1)
